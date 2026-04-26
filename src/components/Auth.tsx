@@ -6,14 +6,34 @@ export default function Auth({ onAuth }: { onAuth: () => void }) {
   const [password, setPassword] = useState("");
 
   async function handleLogin() {
+    if (!email || !password) {
+      return alert("Please enter email and password.");
+    }
+
     const { error } = await signIn(email, password);
-    if (error) return alert(error.message);
+
+    if (error) {
+      return alert(error.message);
+    }
+
     onAuth();
   }
 
   async function handleSignup() {
+    if (!email || !password) {
+      return alert("Please enter email and password.");
+    }
+
+    if (password.length < 6) {
+      return alert("Password must be at least 6 characters.");
+    }
+
     const { error } = await signUp(email, password);
-    if (error) return alert(error.message);
+
+    if (error) {
+      return alert(error.message);
+    }
+
     alert("Account created. Now login.");
   }
 
@@ -25,8 +45,9 @@ export default function Auth({ onAuth }: { onAuth: () => void }) {
         <input
           className="w-full p-4 rounded-xl bg-black border border-white/10"
           placeholder="Email"
+          type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => setEmail(e.target.value.trim())}
         />
 
         <input
