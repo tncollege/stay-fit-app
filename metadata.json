@@ -1,0 +1,6 @@
+{
+  "name": "STAYFITINLIFE",
+  "description": "Your ultimate fitness, nutrition, and recovery coach. Features calorie tracking, workout logging, and AI-powered insights.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["fitness_tracking", "ai_coaching", "barcode_scanning"]
+}

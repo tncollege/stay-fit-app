@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+@theme {
+  --color-dark: #0A0A0A;
+  --color-panel: #1A1A1A;
+  --color-active: #111111;
+  --color-lime: #D7FF00;
+  --color-pink: #FF2E63;
+  --color-sky: #00D1FF;
+  --color-border: #222222;
+  --color-border-bright: #333333;
+
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-dark);
+  color: white;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+.stat-card {
+  background: var(--color-panel);
+  border-radius: 20px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+}
+
+.ai-coach-card {
+  background: linear-gradient(135deg, #1E1E1E 0%, #0A0A0A 100%);
+  border-radius: 24px;
+  padding: 32px;
+  border: 1px solid rgba(215, 255, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+}
+
+.ai-coach-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(215, 255, 0, 0.3), transparent);
+}
+
+.ai-coach-card::after {
+  content: '';
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, rgba(215, 255, 0, 0.08) 0%, transparent 70%);
+  filter: blur(40px);
+  border-radius: 50%;
+}
+
+.label-small {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1px;
+  opacity: 0.5;
+  font-weight: 700;
+}
+
+.big-text {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1;
+}
+
+.ai-tag {
+  background: rgba(215, 255, 0, 0.1);
+  color: var(--color-lime);
+  padding: 4px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: 12px;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.markdown-body {
+  word-break: break-word;
+}
+.markdown-body h1 {
+  @apply text-3xl font-black mb-6 text-lime mt-2 tracking-tighter;
+}
+.markdown-body h2 {
+  @apply text-xl font-black mb-4 text-white mt-8 tracking-tight flex items-center gap-2;
+}
+.markdown-body h2::before {
+  content: '';
+  @apply w-1 h-5 bg-lime rounded-full;
+}
+.markdown-body h3 {
+  @apply text-lg font-bold mb-3 text-white/90 mt-6;
+}
+.markdown-body p {
+  @apply text-sm text-white/70 leading-relaxed mb-4;
+}
+.markdown-body ul, .markdown-body ol {
+  @apply mb-6 space-y-2 text-sm text-white/70;
+}
+.markdown-body ul { @apply list-none; }
+.markdown-body ul li {
+  @apply relative pl-6;
+}
+.markdown-body ul li::before {
+  content: '→';
+  @apply absolute left-0 text-lime font-black opacity-50;
+}
+.markdown-body ol { @apply list-decimal list-inside; }
+.markdown-body table {
+  @apply w-full border-collapse mb-8 rounded-xl overflow-hidden;
+}
+.markdown-body th {
+  @apply p-4 bg-white/5 border border-border/50 text-left text-[10px] font-black uppercase tracking-widest text-white/40;
+}
+.markdown-body td {
+  @apply p-4 border border-border/30 text-sm text-white/70 font-medium;
+}
+.markdown-body blockquote {
+  @apply border-l-4 border-lime/30 bg-lime/5 p-4 rounded-r-xl italic text-sm text-white/80 mb-6;
+}
+.markdown-body code {
+  @apply bg-white/10 px-1.5 py-0.5 rounded text-lime font-mono text-xs;
+}
+.markdown-body hr {
+  @apply border-border my-8 opacity-20;
+}
+.markdown-body strong {
+  @apply text-white font-black;
+}
