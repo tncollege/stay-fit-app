@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { supabase } from "./supabaseClient";
 
 export async function signUp(email: string, password: string) {
   return supabase.auth.signUp({
@@ -21,9 +21,12 @@ export async function signOut() {
 export async function getCurrentUser() {
   const { data, error } = await supabase.auth.getUser();
 
-  if (error) {
-    return null;
-  }
+  if (error) return null;
 
   return data.user;
+}
+
+export async function getSession() {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
 }
