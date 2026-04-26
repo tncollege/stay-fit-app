@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Auth from './components/Auth';
 import { getSession, signOut } from './services/authService';
+import { supabase } from './services/supabaseClient';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Home, Utensils, Dumbbell, Brain, User, Heart, BarChart as ChartIcon, Settings, 
@@ -64,10 +65,29 @@ export default function App() {
   const [viewDate, setViewDate] = useState(getTodayKey());
 
   useEffect(() => {
-    getSession().then((session) => {
+    let mounted = true;
+
+    async function checkSession() {
+      const session = await getSession();
+      if (!mounted) return;
+      setLoggedIn(Boolean(session));
+      setCheckingAuth(false);
+    }
+
+    checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
       setLoggedIn(Boolean(session));
       setCheckingAuth(false);
     });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
