@@ -94,7 +94,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
         lastWorkoutPlanDate: (isSuccess && !isDev) ? new Date().toISOString() : prev.lastWorkoutPlanDate
       }));
     } catch (error) {
-      console.error("Coach Workout Plan Error:", error);
+      console.error("Gym-E Workout Plan Error:", error);
     } finally {
       setIsGeneratingPlan(false);
     }
@@ -122,7 +122,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
         lastMealPlanDate: (isSuccess && !isDev) ? new Date().toISOString() : prev.lastMealPlanDate
       }));
     } catch (error) {
-      console.error("Coach Meal Plan Error:", error);
+      console.error("Gym-E Meal Plan Error:", error);
     } finally {
       setIsGeneratingPlan(false);
     }
@@ -150,7 +150,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
         lastSupplementPlanDate: (isSuccess && !isDev) ? new Date().toISOString() : prev.lastSupplementPlanDate
       }));
     } catch (error) {
-      console.error("Coach Supplement Plan Error:", error);
+      console.error("Gym-E Supplement Plan Error:", error);
     } finally {
       setIsGeneratingPlan(false);
     }
@@ -160,7 +160,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
     <div className="space-y-8 max-w-5xl mx-auto">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="text-4xl font-black tracking-tight">AI Coach <span className="text-lime">Advisor</span></h2>
+          <h2 className="text-4xl font-black tracking-tight">Gym-E <span className="text-lime">Advisor</span></h2>
           <div className="flex items-center gap-2 mt-2">
             <div className="w-2 h-2 rounded-full bg-lime animate-pulse shadow-[0_0_8px_rgba(215,255,0,0.8)]" />
             <div className="label-small text-lime">Active Intelligence Protocol</div>
@@ -328,7 +328,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                     <Sparkles className="text-sky" size={20} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-sky mb-1">Coach Note</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-sky mb-1">Gym-E Note</p>
                     <p className="text-xs text-white/40 leading-relaxed italic">
                       This plan is calculated based on your {data.profile.mode} status and {data.profile.goal} objective. Adjust intensity based on weekly progress.
                     </p>

@@ -35,7 +35,7 @@ function safeJsonParse<TFallback extends UnknownRecord>(value: string | null | u
 }
 
 export async function askAiCoach(question: string, context: Pick<AppData, "profile" | "recovery"> & UnknownRecord) {
-  const prompt = `You are the STAYFITINLIFE AI Coach.
+  const prompt = `You are the STAYFITINLIFE Gym-E.
 User Profile: ${JSON.stringify(context.profile)}
 Current Daily Status: ${JSON.stringify(context.today)}
 Recovery Status: ${JSON.stringify(context.recovery)}
@@ -50,7 +50,7 @@ Always include a disclaimer that you are an AI and not a medical professional.`;
     const result = await callServerAi(prompt);
     return result || "I'm sorry, I couldn't process that right now. Please try again.";
   } catch (error: unknown) {
-    console.error("Coach Chat Error:", error);
+    console.error("Gym-E Chat Error:", error);
     const code = getErrorCode(error);
     if (code === "API_KEY_MISSING") return "KEY MISSING: Your OPENAI_API_KEY is not set in secrets.";
     if (code === "INVALID_API_KEY") return "INVALID KEY: Your OPENAI_API_KEY is rejected by the server.";
@@ -96,7 +96,7 @@ Return ONLY a JSON object:
 }
 
 export async function generateDailyInsight(data: UnknownRecord) {
-  const prompt = `You are an elite fitness AI coach.
+  const prompt = `You are an elite fitness Gym-E.
 Profile: ${JSON.stringify(data.profile)}
 Consumed: ${JSON.stringify(data.consumed)}
 Targets/Goal: ${JSON.stringify(data.targets)}

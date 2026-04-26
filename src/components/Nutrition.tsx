@@ -370,7 +370,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                       disabled={aiSearching}
                       className="inline-flex items-center gap-2 px-6 py-3 bg-sky text-dark font-black rounded-xl text-[10px] uppercase tracking-widest hover:shadow-lg hover:shadow-sky/20 transition-all"
                     >
-                      {aiSearching ? 'Searching...' : 'Ask AI Coach to find it'}
+                      {aiSearching ? 'Searching...' : 'Ask Gym-E to find it'}
                     </button>
                   </div>
                 )}

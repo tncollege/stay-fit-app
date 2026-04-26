@@ -87,6 +87,15 @@ export default function App() {
     );
   }
 
+  const isPasswordRecovery =
+    window.location.pathname === '/reset-password' ||
+    window.location.hash.includes('type=recovery') ||
+    new URLSearchParams(window.location.search).get('type') === 'recovery';
+
+  if (isPasswordRecovery) {
+    return <Auth onAuth={() => setLoggedIn(true)} />;
+  }
+
   if (!loggedIn) {
     return <Auth onAuth={() => setLoggedIn(true)} />;
   }
@@ -212,7 +221,7 @@ function Navigation({ vertical, activeTab, setActiveTab }: { vertical?: boolean,
     { id: 'home', icon: <Home size={22} />, label: 'Dashboard' },
     { id: 'nutrition', icon: <Utensils size={22} />, label: 'Nutrition' },
     { id: 'workout', icon: <Dumbbell size={22} />, label: 'Workouts' },
-    { id: 'coach', icon: <Brain size={22} />, label: 'Coach' },
+    { id: 'coach', icon: <Brain size={22} />, label: 'Gym-E' },
     { id: 'progress', icon: <ChartIcon size={22} />, label: 'Progress' },
     { id: 'profile', icon: <User size={22} />, label: 'Profile' },
     { id: 'settings', icon: <Settings size={22} />, label: 'Settings' },
@@ -448,7 +457,7 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
           className="ai-coach-card relative overflow-hidden group"
         >
           <div className="flex justify-between items-start mb-4">
-            <div className="ai-tag">AI COACH • ADVISOR</div>
+            <div className="ai-tag">GYM-E • ADVISOR</div>
             <button 
               onClick={fetchInsight}
               disabled={insightLoading}
@@ -554,7 +563,7 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
         </button>
 
         <div className="p-5 border border-border border-dashed rounded-2xl text-center bg-white/[0.02]">
-           <div className="label-small text-lime mb-2">AI Coach Tip</div>
+           <div className="label-small text-lime mb-2">Gym-E Tip</div>
            <p className="text-[11px] leading-relaxed opacity-60">"Your recovery is currently {round(82)}%. Maintain moderate intensity for today's session."</p>
         </div>
       </aside>

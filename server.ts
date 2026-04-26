@@ -14,29 +14,6 @@ const RATE_LIMIT_MAX_REQUESTS = 20;
 
 app.use(express.json({ limit: "64kb" }));
 
-app.use((req, res, next) => {
-  const allowedOrigins = [
-    "https://stayfitinlife.com",
-    "https://www.stayfitinlife.com",
-  ];
-
-  const origin = req.headers.origin;
-
-  if (typeof origin === "string" && allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-  }
-
-  res.header("Vary", "Origin");
-  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-  next();
-});
-
 interface AiChatRequestBody {
   prompt?: unknown;
   jsonMode?: unknown;
@@ -70,7 +47,7 @@ function aiRateLimit(req: Request, res: Response, next: NextFunction) {
   if (current.count >= RATE_LIMIT_MAX_REQUESTS) {
     return res.status(429).json({
       error: "RATE_LIMITED",
-      message: "Too many AI requests. Please try again shortly.",
+      message: "Too many AI requests. Please try again shortly."
     });
   }
 
@@ -79,10 +56,22 @@ function aiRateLimit(req: Request, res: Response, next: NextFunction) {
 }
 
 function validateAiChatBody(body: AiChatRequestBody) {
-  if (!body || typeof body !== "object") return "Request body is required.";
-  if (typeof body.prompt !== "string" || body.prompt.trim().length === 0) return "Prompt is required.";
-  if (body.prompt.length > MAX_PROMPT_LENGTH) return `Prompt is too long. Maximum length is ${MAX_PROMPT_LENGTH} characters.`;
-  if (body.jsonMode !== undefined && typeof body.jsonMode !== "boolean") return "jsonMode must be a boolean.";
+  if (!body || typeof body !== "object") {
+    return "Request body is required.";
+  }
+
+  if (typeof body.prompt !== "string" || body.prompt.trim().length === 0) {
+    return "Prompt is required.";
+  }
+
+  if (body.prompt.length > MAX_PROMPT_LENGTH) {
+    return `Prompt is too long. Maximum length is ${MAX_PROMPT_LENGTH} characters.`;
+  }
+
+  if (body.jsonMode !== undefined && typeof body.jsonMode !== "boolean") {
+    return "jsonMode must be a boolean.";
+  }
+
   return null;
 }
 
@@ -91,20 +80,19 @@ let openai: OpenAI | null = null;
 function getOpenAI() {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
-    throw new Error("OPENAI_API_KEY is missing from environment. Add it to Render environment variables.");
+    throw new Error("OPENAI_API_KEY is missing from environment. Add it to .env.local or your deployment secrets.");
   }
 
   if (!openai) {
     openai = new OpenAI({ apiKey: key });
   }
-
   return openai;
 }
 
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
-    openai_configured: Boolean(process.env.OPENAI_API_KEY),
+    openai_configured: Boolean(process.env.OPENAI_API_KEY)
   });
 });
 
@@ -125,12 +113,12 @@ app.post("/api/ai/chat", aiRateLimit, async (req: Request<unknown, unknown, AiCh
         {
           role: "system",
           content:
-            "You are STAYFITINLIFE's fitness assistant. Provide practical fitness and nutrition guidance. Do not diagnose, treat medical conditions, or recommend unsafe supplement/diet practices. For medical concerns, tell users to consult a qualified clinician.",
+            "You are STAYFITINLIFE's fitness assistant. Provide practical fitness and nutrition guidance. Do not diagnose, treat medical conditions, or recommend unsafe supplement/diet practices. For medical concerns, tell users to consult a qualified clinician."
         },
-        { role: "user", content: prompt },
+        { role: "user", content: prompt }
       ],
       response_format: jsonMode ? { type: "json_object" } : { type: "text" },
-      temperature: 0.6,
+      temperature: 0.6
     });
 
     res.json({ content: response.choices[0]?.message?.content ?? "" });
