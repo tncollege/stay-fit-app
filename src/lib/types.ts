@@ -29,6 +29,7 @@ export interface Meal {
   qty: string | number;
   unit: string;
   meal: string;
+  loggedAt?: string;
 }
 
 export interface Workout {
@@ -44,10 +45,12 @@ export interface Workout {
 
 export interface WorkoutSet {
   id?: string | number;
+  exercise?: string;
   weight?: string | number;
   reps?: string | number;
   duration?: number;
   completed?: boolean;
+  [key: string]: any;
 }
 
 export interface ExerciseInfo {

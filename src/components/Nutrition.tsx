@@ -131,7 +131,8 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
       carbs: finalMacros.c,
       fats: finalMacros.f,
       qty: qty,
-      unit: unitLabel
+      unit: unitLabel,
+      loggedAt: new Date().toISOString()
     };
     
     setData((prev: AppData) => {
@@ -161,6 +162,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         fats: Number(finalMacros.f) || 0,
         quantity: Number(qty) || 1,
         unit: unitLabel || 'portion',
+        loggedAt: newMeal.loggedAt,
       });
       console.log('Meal saved to Supabase ✅');
     } catch (err) {
@@ -190,7 +192,8 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
       id: crypto.randomUUID(),
       ...customFood,
       meal: selectedMeal,
-      qty: 1
+      qty: 1,
+      loggedAt: new Date().toISOString()
     };
     setData((prev: AppData) => {
       const foodWithCategory = { ...customFood, main: 'User Food' };
@@ -218,6 +221,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         fats: Number(customFood.fats) || 0,
         quantity: 1,
         unit: customFood.unit || 'portion',
+        loggedAt: newMeal.loggedAt,
       });
       console.log('Meal saved to Supabase ✅');
     } catch (err) {
@@ -489,6 +493,9 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                       <p className="font-bold text-sm tracking-tight">{meal.name}</p>
                       <div className="text-[9px] font-bold text-muted uppercase tracking-widest mt-1 opacity-40">
                          P {meal.protein}g • C {meal.carbs}g • F {meal.fats}g
+                      </div>
+                      <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mt-1">
+                        Logged: {meal.loggedAt ? new Date(meal.loggedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
                       </div>
                     </div>
                     <div className="flex items-center gap-4">

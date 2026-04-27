@@ -49,12 +49,14 @@ create table if not exists meals (
   fats numeric default 0,
   quantity numeric default 1,
   unit text default 'portion',
+  logged_at timestamptz default now(),
   created_at timestamptz default now()
 );
 
 alter table meals add column if not exists meal_type text;
 alter table meals add column if not exists quantity numeric default 1;
 alter table meals add column if not exists unit text default 'portion';
+alter table meals add column if not exists logged_at timestamptz default now();
 
 create table if not exists workouts (
   id uuid primary key default gen_random_uuid(),

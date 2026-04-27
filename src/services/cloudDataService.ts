@@ -20,6 +20,7 @@ function groupMeals(rows: any[]): Record<string, Meal[]> {
       fats: Number(row.fats || 0),
       qty: row.quantity ?? 1,
       unit: row.unit || 'portion',
+      loggedAt: row.logged_at || row.created_at || undefined,
     });
     return acc;
   }, {});
@@ -152,6 +153,7 @@ export async function saveMeal(meal: any) {
       fats: meal.fats,
       quantity: meal.quantity,
       unit: meal.unit,
+      logged_at: meal.loggedAt || meal.logged_at || new Date().toISOString(),
     },
     { onConflict: 'id' }
   );

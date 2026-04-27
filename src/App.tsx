@@ -295,7 +295,7 @@ export default function App() {
       {/* Content Area */}
       <div className="flex-1 lg:ml-20 flex flex-col">
         {/* Top Bar */}
-        <header className="h-20 border-b border-border px-6 lg:px-10 flex items-center justify-between bg-dark/50 backdrop-blur-md sticky top-0 z-40">
+        <header className="h-20 border-b border-border px-6 lg:px-10 flex items-center justify-between bg-dark/95 backdrop-blur-md z-40">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg lg:hidden">
               <Menu size={20} />
@@ -1336,21 +1336,7 @@ function Progress({ data, setData, setActiveTab, viewDate }: { data: AppData, se
   };
 
   const handleCloudSync = async (source: string) => {
-    setIsSyncing(true);
-    // Simulation of API handshake and data retrieval
-    await new Promise(r => setTimeout(r, 2000));
-    
-    const today = getTodayKey();
-    const mockSteps = Math.floor(Math.random() * 5000) + 7000;
-    
-    setData((prev: AppData) => ({
-      ...prev,
-      steps: { ...prev.steps, [today]: (prev.steps?.[today] || 0) + mockSteps },
-      lastSyncDate: new Date().toISOString()
-    }));
-    
-    setIsSyncing(false);
-    alert(`NEURAL SYNC SUCCESS: Pulled ${mockSteps.toLocaleString()} steps from ${source} cloud.`);
+    alert(`${source} direct sync needs a native HealthKit/Health Connect/WHOOP integration. Use manual entry or CSV import for now.`);
   };
 
   const isMetric = data.profile.unitsSystem === 'metric';
