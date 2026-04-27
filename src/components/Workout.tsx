@@ -1039,19 +1039,21 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="font-bold text-sm tracking-tight">{w.name}</p>
-                        <span className="label-small text-sky">{w.category}</span>
+                        <span className="l<div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover/session:opacity-100 transition-opacity">abel-small text-sky">{w.category}</span>
                       </div>
                       <div className="flex gap-2 opacity-0 group-hover/session:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => handleEditWorkout(w)}
-                          className="p-2 bg-white/5 rounded-lg text-white/20 hover:text-lime hover:bg-lime/10 transition-all"
-                        >
+                       <button 
+  onClick={() => handleEditWorkout(w)}
+  className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 
+  hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.6)] transition-all"
+>
                           <Search size={14}/>
                         </button>
                         <button 
-                          onClick={() => handleDeleteWorkout(w.id)}
-                          className="p-2 bg-white/5 rounded-lg text-white/20 hover:text-pink hover:bg-pink/10 transition-all"
-                        >
+  onClick={() => handleDeleteWorkout(w.id)}
+  className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 
+  hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.6)] transition-all"
+>
                           <Trash2 size={14}/>
                         </button>
                       </div>
