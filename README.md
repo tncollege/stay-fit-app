@@ -125,3 +125,8 @@ npx tsx server.ts
 - `VITE_SUPABASE_ANON_KEY` is public by design for browser apps.
 - Supabase Row Level Security policies in `supabase_schema.sql` ensure each user can only access their own data.
 - The AI backend requires CORS for `https://stayfitinlife.com` and `https://www.stayfitinlife.com`, already included in `server.ts`.
+
+## Mobile profile sync note
+This build loads profile/onboarding data from Supabase before showing onboarding, so users who complete onboarding on desktop should not be asked again on mobile after logging in.
+
+If you already ran an older schema, run the latest `supabase_schema.sql` again. It safely adds missing profile columns with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.

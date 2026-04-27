@@ -48,6 +48,7 @@ const DEFAULT_DATA: AppData = {
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [cloudLoading, setCloudLoading] = useState(false);
 
   const [data, setData] = useState<AppData>(() => {
     const saved = storageAdapter.load();
@@ -97,24 +98,38 @@ export default function App() {
     let cancelled = false;
 
     async function loadFromCloud() {
+      setCloudLoading(true);
       try {
         const cloud = await loadCloudData();
-        if (cancelled || !cloud) return;
+        if (cancelled) return;
 
-        setData((prev: AppData) => ({
-          ...prev,
-          ...cloud,
-          profile: {
-            ...prev.profile,
-            ...(cloud.profile || {}),
-          },
-          meals: cloud.meals || prev.meals,
-          workouts: cloud.workouts || prev.workouts,
-          weights: cloud.weights || prev.weights,
-          steps: cloud.steps || prev.steps,
-        }));
+        if (cloud) {
+          const cloudProfile = cloud.profile || {};
+          const hasCloudProfile = Boolean(
+            (cloudProfile as any).name ||
+            (cloudProfile as any).age ||
+            (cloudProfile as any).height ||
+            (cloudProfile as any).currentWeight
+          );
+
+          setData((prev: AppData) => ({
+            ...prev,
+            ...cloud,
+            profile: {
+              ...prev.profile,
+              ...cloudProfile,
+            },
+            introSeen: hasCloudProfile ? true : prev.introSeen,
+            meals: cloud.meals || prev.meals,
+            workouts: cloud.workouts || prev.workouts,
+            weights: cloud.weights || prev.weights,
+            steps: cloud.steps || prev.steps,
+          }));
+        }
       } catch (err) {
         console.error('Cloud data load error ❌', err);
+      } finally {
+        if (!cancelled) setCloudLoading(false);
       }
     }
 
@@ -134,7 +149,7 @@ export default function App() {
     return !!(p.name && p.age && p.height && p.currentWeight && p.goal);
   }, [data.profile]);
 
-  if (checkingAuth) {
+  if (checkingAuth || (loggedIn && cloudLoading)) {
     return (
       <div className="min-h-screen bg-dark text-lime flex items-center justify-center font-black">
         Loading...

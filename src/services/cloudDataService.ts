@@ -29,14 +29,14 @@ function groupWorkouts(rows: any[]): Record<string, Workout[]> {
   return rows.reduce((acc: Record<string, Workout[]>, row) => {
     if (!acc[row.date]) acc[row.date] = [];
     acc[row.date].push({
-      id: typeof row.id === 'number' ? row.id : Date.parse(row.created_at || '') || Date.now(),
+      id: row.id,
       name: row.name || 'Workout',
       category: row.category || 'Workout',
       caloriesBurned: Number(row.calories_burned || 0),
       muscles: row.muscles || [],
       sets: row.sets || [],
       duration: row.duration || undefined,
-    });
+    } as Workout);
     return acc;
   }, {});
 }
@@ -66,12 +66,21 @@ export async function loadCloudData(): Promise<Partial<AppData> | null> {
   const profileRow = profileRes.data;
   const cloudProfile = profileRow
     ? {
-        name: profileRow.name || undefined,
-        age: profileRow.age || undefined,
-        height: profileRow.height || undefined,
-        currentWeight: profileRow.current_weight || undefined,
-        targetWeight: profileRow.target_weight || undefined,
-        goal: profileRow.goal || undefined,
+        name: profileRow.name ?? undefined,
+        age: profileRow.age ?? undefined,
+        height: profileRow.height ?? undefined,
+        currentWeight: profileRow.current_weight ?? undefined,
+        targetWeight: profileRow.target_weight ?? undefined,
+        startWeight: profileRow.start_weight ?? undefined,
+        targetBodyFat: profileRow.target_body_fat ?? undefined,
+        timelineWeeks: profileRow.timeline_weeks ?? undefined,
+        goal: profileRow.goal ?? undefined,
+        unitsSystem: profileRow.units_system ?? undefined,
+        mode: profileRow.mode ?? undefined,
+        activity: profileRow.activity ?? undefined,
+        diet: profileRow.diet ?? undefined,
+        cuisine: profileRow.cuisine ?? undefined,
+        stepGoal: profileRow.step_goal ?? undefined,
       }
     : {};
 
@@ -96,7 +105,17 @@ export async function saveProfile(profile: any) {
     height: profile.height ?? null,
     current_weight: profile.currentWeight ?? null,
     target_weight: profile.targetWeight ?? null,
+    start_weight: profile.startWeight ?? profile.currentWeight ?? null,
+    target_body_fat: profile.targetBodyFat ?? null,
+    timeline_weeks: profile.timelineWeeks ?? null,
     goal: profile.goal ?? null,
+    units_system: profile.unitsSystem ?? 'metric',
+    mode: profile.mode ?? null,
+    activity: profile.activity ?? null,
+    diet: profile.diet ?? null,
+    cuisine: profile.cuisine ?? null,
+    step_goal: profile.stepGoal ?? null,
+    updated_at: new Date().toISOString(),
   });
 
   if (error) throw error;
