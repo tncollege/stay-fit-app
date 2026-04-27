@@ -164,3 +164,7 @@ create index if not exists idx_water_user_date on water(user_id, date);
 
 -- Force PostgREST/Supabase API schema cache refresh after migrations
 notify pgrst, 'reload schema';
+
+-- Ensure workout upserts can target id and API schema cache is fresh
+create unique index if not exists workouts_id_unique on public.workouts(id);
+notify pgrst, 'reload schema';

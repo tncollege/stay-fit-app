@@ -5,7 +5,7 @@ import { AppData, Workout } from '../lib/types';
 import { EXERCISE_DATABASE } from '../data/database';
 import { searchExerciseInfo, calculateRecoveryTime } from '../services/aiService';
 import DateNavigator from './DateNavigator';
-import { saveWorkout } from '../services/cloudDataService';
+import { saveWorkout, deleteWorkoutFromCloud } from '../services/cloudDataService';
 
 const CATEGORY_IMAGES: Record<string, string> = {
   "Chest": "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop",
@@ -201,7 +201,7 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
     const extraParam = cardioExtraMetric && cardioExtraValue ? { [cardioExtraMetric]: cardioExtraValue } : {};
 
     const newWorkout: Workout = {
-      id: Date.now(),
+      id: crypto.randomUUID(),
       name: `${cardioExercise} Session`,
       category: 'Cardio',
       muscles: ['Cardio'],
@@ -239,7 +239,7 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
   const handleFinishWorkout = async () => {
     if (currentSets.length === 0) return;
     const newWorkout: Workout = {
-      id: Date.now(),
+      id: crypto.randomUUID(),
       name: `${selectedMuscle} Workout`,
       category: 'Strength',
       muscles: [selectedMuscle],
@@ -271,7 +271,7 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
     setRecoveryReason('');
   };
 
-  const handleDeleteWorkout = (id: number) => {
+  const handleDeleteWorkout = async (id: string | number) => {
     setData((prev: AppData) => ({
       ...prev,
       workouts: {
@@ -279,6 +279,13 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
         [viewDate]: (prev.workouts[viewDate] || []).filter(w => w.id !== id)
       }
     }));
+
+    try {
+      await deleteWorkoutFromCloud(id);
+      console.log('Workout deleted from Supabase ✅');
+    } catch (err) {
+      console.error('Supabase workout delete error ❌', err);
+    }
   };
 
   const handleEditWorkout = (workout: Workout) => {
@@ -870,7 +877,7 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
                         onClick={() => {
                           const durationNum = parseInt(cardioDuration);
                           const newWorkout: Workout = {
-                            id: Date.now(),
+                            id: crypto.randomUUID(),
                             name: `${cardioExercise} Session`,
                             category: 'Sports',
                             muscles: ['Sports'],
@@ -882,6 +889,9 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
                             ...prev,
                             workouts: { ...prev.workouts, [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout] }
                           }));
+                          saveWorkout(viewDate, newWorkout)
+                            .then(() => console.log('Sports workout saved to Supabase ✅'))
+                            .catch((err) => console.error('Supabase sports save error ❌', err));
                           setCardioExercise('');
                           setCardioDuration('');
                         }}
@@ -977,7 +987,7 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
                         onClick={() => {
                           const durationNum = parseInt(cardioDuration);
                           const newWorkout: Workout = {
-                            id: Date.now(),
+                            id: crypto.randomUUID(),
                             name: `${cardioExercise} Session`,
                             category: 'Yoga',
                             muscles: ['Yoga'],
@@ -989,6 +999,9 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
                             ...prev,
                             workouts: { ...prev.workouts, [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout] }
                           }));
+                          saveWorkout(viewDate, newWorkout)
+                            .then(() => console.log('Sports workout saved to Supabase ✅'))
+                            .catch((err) => console.error('Supabase sports save error ❌', err));
                           setCardioExercise('');
                           setCardioDuration('');
                         }}

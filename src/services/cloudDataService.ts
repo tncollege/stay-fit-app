@@ -167,13 +167,21 @@ export async function deleteMealFromCloud(id: string) {
   if (error) throw error;
 }
 
+function isUuid(value: unknown) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export async function saveWorkout(date: string, workout: any) {
   const userId = await getUserId();
   if (!userId) throw new Error('User not logged in');
 
+  // The workouts.id column is UUID. Older local data used Date.now() numbers,
+  // which caused Supabase 400 errors on upsert. Only send real UUIDs.
+  const workoutId = isUuid(workout.id) ? workout.id : crypto.randomUUID();
+
   const { error } = await supabase.from('workouts').upsert(
     {
-      id: workout.id || crypto.randomUUID(),
+      id: workoutId,
       user_id: userId,
       date,
       name: workout.name,
@@ -186,6 +194,20 @@ export async function saveWorkout(date: string, workout: any) {
     { onConflict: 'id' }
   );
 
+  if (error) throw error;
+  return workoutId;
+}
+
+export async function deleteWorkoutFromCloud(id: string | number) {
+  const userId = await getUserId();
+  if (!userId) throw new Error('User not logged in');
+
+  if (!isUuid(id)) {
+    console.warn('Skipping cloud workout delete for legacy non-UUID id:', id);
+    return;
+  }
+
+  const { error } = await supabase.from('workouts').delete().eq('id', id).eq('user_id', userId);
   if (error) throw error;
 }
 

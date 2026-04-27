@@ -32,7 +32,7 @@ export interface Meal {
 }
 
 export interface Workout {
-  id: number;
+  id: string | number;
   name: string;
   category: string;
   caloriesBurned: number;
