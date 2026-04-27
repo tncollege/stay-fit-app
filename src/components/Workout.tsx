@@ -19,6 +19,14 @@ const CATEGORY_IMAGES: Record<string, string> = {
   "Yoga": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=600&auto=format&fit=crop"
 };
 
+function toExerciseTitle(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export default function WorkoutView({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
   const [activeTab, setActiveTab] = useState<'strength' | 'cardio' | 'sports' | 'yoga'>('strength');
   const [selectedMuscle, setSelectedMuscle] = useState<string>('Chest');
@@ -420,24 +428,35 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
                         {getExerciseOptions(selectedMuscle).map((e: string) => <option key={e} value={e} />)}
                       </datalist>
 
+                      <div className="mt-3 max-h-56 overflow-y-auto space-y-2 custom-scrollbar">
+                        {getExerciseOptions(selectedMuscle)
+                          .filter((e: string) => !exercise || e.toLowerCase().includes(exercise.toLowerCase()))
+                          .slice(0, 16)
+                          .map((e: string) => (
+                            <button
+                              key={e}
+                              type="button"
+                              onClick={() => setExercise(e)}
+                              className={`w-full text-left px-4 py-3 rounded-xl border text-xs font-bold transition-all ${
+                                exercise === e
+                                  ? 'bg-lime text-dark border-lime shadow-lg shadow-lime/20'
+                                  : 'bg-white/[0.03] border-border text-white/50 hover:text-white hover:border-lime/30'
+                              }`}
+                            >
+                              {e}
+                            </button>
+                          ))}
+                      </div>
+
                       {exercise && (
-                        <motion.div 
+                        <motion.div
                           initial={{ opacity: 0, scale: 0.95 }}
                           animate={{ opacity: 1, scale: 1 }}
-                          className="mt-4 p-4 bg-white/[0.02] border border-border rounded-2xl flex gap-4 items-center"
+                          className="mt-4 p-4 bg-lime/5 border border-lime/20 rounded-2xl"
                         >
-                          <div className="w-20 h-20 rounded-xl overflow-hidden bg-white/5 flex-shrink-0">
-                            <img 
-                              src={`https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=200&auto=format&fit=crop&exercise=${encodeURIComponent(exercise)}`}
-                              alt={exercise}
-                              className="w-full h-full object-cover opacity-60"
-                            />
-                          </div>
-                          <div>
-                            <div className="text-[10px] font-black text-lime uppercase tracking-widest mb-1">Visual Reference</div>
-                            <div className="text-sm font-bold text-white/80">{exercise} Protocol</div>
-                            <p className="text-[10px] text-white/30 mt-1">Focus on controlled eccentric phase and full range of motion.</p>
-                          </div>
+                          <div className="text-[10px] font-black text-lime uppercase tracking-widest mb-1">Selected Exercise</div>
+                          <div className="text-sm font-bold text-white/90">{exercise}</div>
+                          <p className="text-[10px] text-white/30 mt-1">Log your working sets below. Image previews were removed so exercise names stay accurate.</p>
                         </motion.div>
                       )}
                     </div>
