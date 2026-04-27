@@ -20,7 +20,7 @@ import { AppData, Profile, Meal, Workout, WaterLog, Recovery } from './lib/types
 import { getTodayKey, round, idealWeightRange, kgToLb, lbToKg, cmToFtIn, ftInToCm, estimatedTargetFromFat, estimatedFatFromTarget } from './lib/utils';
 import { askAiCoach, analyzeGoal, generateDailyInsight } from './services/aiService';
 import { STORE_KEY, storageAdapter } from './services/storage';
-import { loadCloudData, saveProfile, saveWeight, saveSteps, syncLocalDataToCloud, hasMeaningfulLocalData, hasMeaningfulCloudData } from './services/cloudDataService';
+import { loadCloudData, saveProfile, saveWeight, saveSteps, deleteWeightFromCloud, deleteStepsFromCloud, saveWaterTotal, syncLocalDataToCloud, hasMeaningfulLocalData, hasMeaningfulCloudData } from './services/cloudDataService';
 import { FOOD_DATABASE, EXERCISE_DATABASE } from './data/database';
 
 const DEFAULT_DATA: AppData = {
@@ -471,6 +471,27 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
   }, [targets, burned]);
 
   const waterTotal = waterArr.reduce((acc, w) => acc + w.amount, 0) / 1000;
+  const handleDashboardWater = async (amountMl: number) => {
+    const time = Date.now();
+    const currentTotal = (data.water[today] || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const newTotal = currentTotal + amountMl;
+
+    setData((prev: AppData) => ({
+      ...prev,
+      water: {
+        ...prev.water,
+        [today]: [{ amount: newTotal, time }]
+      }
+    }));
+
+    try {
+      await saveWaterTotal(today, newTotal, time);
+      console.log('Dashboard water saved to Supabase ✅');
+    } catch (err) {
+      console.error('Dashboard water save error ❌', err);
+    }
+  };
+
   const netCalories = consumed.calories - burned;
   const remaining = targets.calories - netCalories;
   const progressPct = Math.min(100, Math.round((consumed.calories / dynamicTargets.calories) * 100));
@@ -674,10 +695,25 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
            </div>
         </div>
 
-        <div className="label-small px-2 text-sky">Hydration Status</div>
-        <div className="stat-card">
-           <MacroColumn label="Water Intake" current={waterTotal} target={dynamicTargets.water} unit="L" color="sky" />
+        <div className="label-small px-2 text-sky flex justify-between items-center">
+          <span>Hydration Status</span>
+          <span className="text-white/40">{waterTotal.toFixed(1)}L / {dynamicTargets.water.toFixed(1)}L</span>
         </div>
+        <div className="stat-card space-y-4">
+           <MacroColumn label="Water Intake" current={waterTotal} target={dynamicTargets.water} unit="L" color="sky" />
+           <div className="grid grid-cols-3 gap-2">
+             {[250, 500, 750].map((amt) => (
+               <button
+                 key={amt}
+                 onClick={() => handleDashboardWater(amt)}
+                 className="py-3 rounded-xl bg-sky/10 border border-sky/20 text-sky text-[10px] font-black uppercase tracking-widest hover:bg-sky/20 transition-all active:scale-95"
+               >
+                 +{amt}ml
+               </button>
+             ))}
+           </div>
+        </div>
+
 
         <div className="label-small px-2">Today's Routine</div>
         <div className="space-y-3">
@@ -1297,9 +1333,37 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
     return { start, current, target, diff, toGoal, progress };
   }, [data.profile, data.weights]);
 
+  useEffect(() => {
+    if (activeView === 'steps') {
+      const existingSteps = data.steps?.[logDate];
+      setLogSteps(existingSteps !== undefined ? String(existingSteps) : '');
+    } else {
+      const existingWeight = (data.weights || []).find(w => w.date === logDate)?.weight;
+      setLogWeight(existingWeight !== undefined ? String(existingWeight) : '');
+    }
+  }, [activeView, logDate, data.steps, data.weights]);
+
+  const refreshCloudAfterProgressChange = async () => {
+    const cloud = await loadCloudData();
+    if (!cloud) return;
+
+    setData((prev: AppData) => ({
+      ...prev,
+      weights: (cloud.weights as any) || [],
+      steps: (cloud.steps as any) || {},
+      profile: cloud.profile && Object.keys(cloud.profile).length > 0
+        ? { ...prev.profile, ...cloud.profile }
+        : prev.profile,
+      lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
+    }));
+  };
+
   const handleLogWeight = async () => {
     const weight = Number(logWeight);
-    if (!weight) return;
+    if (!logWeight.trim() || !Number.isFinite(weight) || weight <= 0) {
+      alert('Please enter a valid weight.');
+      return;
+    }
     
     setData((prev: AppData) => {
       const filtered = prev.weights.filter(w => w.date !== logDate);
@@ -1309,41 +1373,88 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
         profile: { ...prev.profile, currentWeight: weight }
       };
     });
+
     try {
       await saveWeight(logDate, weight);
       setViewDate(logDate);
+      await refreshCloudAfterProgressChange();
+      alert('Weight synchronized.');
     } catch (err) {
       console.error('Weight save error ❌', err);
+      alert('Weight save failed. Please try again.');
     }
-    setLogWeight('');
-    alert("Weight synchronized to neural history.");
   };
 
   const handleLogSteps = async () => {
     const steps = Number(logSteps);
-    if (isNaN(steps)) return;
+    if (!logSteps.trim() || !Number.isFinite(steps) || steps < 0) {
+      alert('Please enter valid steps.');
+      return;
+    }
     
     setData((prev: AppData) => ({
       ...prev,
       steps: { ...prev.steps, [logDate]: steps }
     }));
+
     try {
       await saveSteps(logDate, steps);
-      setViewDate(logDate); // keep Dashboard Movement Cycle on the same date that was updated
-      const cloud = await loadCloudData();
-      if (cloud?.steps) {
-        setData((prev: AppData) => ({
-          ...prev,
-          steps: cloud.steps as any,
-          lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
-        }));
-      }
+      setViewDate(logDate);
+      await refreshCloudAfterProgressChange();
+      alert('Steps synchronized. Dashboard Movement Cycle refreshed.');
     } catch (err) {
       console.error('Steps save error ❌', err);
+      alert('Steps save failed. Please try again.');
     }
-    setLogSteps('');
-    alert("Step matrix updated. Dashboard Movement Cycle refreshed.");
   };
+
+  const handleEditWeight = (date: string, weight: number) => {
+    setActiveView('weight');
+    setLogDate(date);
+    setLogWeight(String(weight));
+  };
+
+  const handleDeleteWeight = async (date: string) => {
+    if (!confirm('Delete this weight entry?')) return;
+
+    setData((prev: AppData) => ({
+      ...prev,
+      weights: (prev.weights || []).filter(w => w.date !== date),
+    }));
+
+    try {
+      await deleteWeightFromCloud(date);
+      await refreshCloudAfterProgressChange();
+    } catch (err) {
+      console.error('Weight delete error ❌', err);
+      alert('Weight delete failed. Please try again.');
+    }
+  };
+
+  const handleEditSteps = (date: string, steps: number) => {
+    setActiveView('steps');
+    setLogDate(date);
+    setLogSteps(String(steps));
+  };
+
+  const handleDeleteSteps = async (date: string) => {
+    if (!confirm('Delete this steps entry?')) return;
+
+    setData((prev: AppData) => {
+      const nextSteps = { ...(prev.steps || {}) };
+      delete nextSteps[date];
+      return { ...prev, steps: nextSteps };
+    });
+
+    try {
+      await deleteStepsFromCloud(date);
+      await refreshCloudAfterProgressChange();
+    } catch (err) {
+      console.error('Steps delete error ❌', err);
+      alert('Steps delete failed. Please try again.');
+    }
+  };
+
 
   const handleCloudSync = async (source: string) => {
     alert(`${source} direct sync needs a native HealthKit/Health Connect/WHOOP integration. Use manual entry or CSV import for now.`);
@@ -1445,32 +1556,94 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
             </div>
           </div>
 
-          {/* Quick Log */}
+           {/* Quick Log */}
           <div className="stat-card">
             <h3 className="label-small mb-6">Log Record</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Field label="Protocol Date">
-                <input type="date" value={logDate} onChange={e => setLogDate(e.target.value)} />
-              </Field>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+              <div className="space-y-2 min-w-0">
+                <div className="label-small text-muted ml-1">Protocol Date</div>
+                <input
+                  type="date"
+                  value={logDate}
+                  onChange={e => setLogDate(e.target.value)}
+                  className="w-full min-w-0 max-w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all appearance-none"
+                />
+              </div>
+
               {activeView === 'weight' ? (
                 <Field label={`Weight (${weightUnit})`}>
                   <input type="number" placeholder="00.0" value={logWeight} onChange={e => setLogWeight(e.target.value)} />
                 </Field>
               ) : (
                 <Field label="Daily Steps">
-                  <input type="number" placeholder="10000" value={logSteps} onChange={e => setLogSteps(e.target.value)} />
+                  <input type="number" placeholder="Enter steps" value={logSteps} onChange={e => setLogSteps(e.target.value)} />
                 </Field>
               )}
-              <div className="flex items-end">
-                <button 
-                  onClick={activeView === 'weight' ? handleLogWeight : handleLogSteps}
-                  className="w-full py-5 bg-white/5 border border-border hover:border-lime/40 hover:bg-lime hover:text-dark transition-all rounded-2xl font-black text-xs uppercase tracking-widest"
-                >
-                  Confirm Entry
-                </button>
-              </div>
+
+              <button 
+                onClick={activeView === 'weight' ? handleLogWeight : handleLogSteps}
+                className="w-full py-5 bg-lime text-dark border border-lime hover:scale-[1.01] active:scale-95 transition-all rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-lime/20"
+              >
+                {activeView === 'weight' ? 'Save Weight' : 'Save Steps'}
+              </button>
             </div>
           </div>
+
+          <div className="stat-card">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="label-small">{activeView === 'weight' ? 'Weight History' : 'Steps History'}</h3>
+              <div className="text-[10px] text-white/30 font-bold uppercase tracking-widest">Edit or delete entries</div>
+            </div>
+
+            {activeView === 'weight' ? (
+              history.length === 0 ? (
+                <div className="py-10 text-center label-small opacity-20 italic">No weight records yet</div>
+              ) : (
+                <div className="space-y-3 max-h-72 overflow-y-auto custom-scrollbar">
+                  {history.slice().reverse().map(item => (
+                    <div key={item.date} className="flex items-center justify-between gap-4 p-4 bg-white/[0.02] border border-border rounded-2xl">
+                      <div>
+                        <div className="text-sm font-black">{item.weight} {weightUnit}</div>
+                        <div className="label-small opacity-40 mt-1">{item.date}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleEditWeight(item.date, item.weight)} className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-dark transition-all">
+                          <Search size={14} />
+                        </button>
+                        <button onClick={() => handleDeleteWeight(item.date)} className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-dark transition-all">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              stepHistory.length === 0 ? (
+                <div className="py-10 text-center label-small opacity-20 italic">No step records yet</div>
+              ) : (
+                <div className="space-y-3 max-h-72 overflow-y-auto custom-scrollbar">
+                  {stepHistory.slice().reverse().map(item => (
+                    <div key={item.date} className="flex items-center justify-between gap-4 p-4 bg-white/[0.02] border border-border rounded-2xl">
+                      <div>
+                        <div className="text-sm font-black text-sky">{item.steps.toLocaleString()} steps</div>
+                        <div className="label-small opacity-40 mt-1">{item.date}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleEditSteps(item.date, item.steps)} className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-dark transition-all">
+                          <Search size={14} />
+                        </button>
+                        <button onClick={() => handleDeleteSteps(item.date)} className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-dark transition-all">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+
         </div>
 
         <aside className="space-y-6">

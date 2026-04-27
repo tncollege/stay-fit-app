@@ -237,6 +237,22 @@ export async function saveSteps(date: string, steps: number) {
   if (error) throw error;
 }
 
+export async function deleteWeightFromCloud(date: string) {
+  const userId = await getUserId();
+  if (!userId) throw new Error('User not logged in');
+
+  const { error } = await supabase.from('weights').delete().eq('user_id', userId).eq('date', date);
+  if (error) throw error;
+}
+
+export async function deleteStepsFromCloud(date: string) {
+  const userId = await getUserId();
+  if (!userId) throw new Error('User not logged in');
+
+  const { error } = await supabase.from('steps').delete().eq('user_id', userId).eq('date', date);
+  if (error) throw error;
+}
+
 export async function saveWaterTotal(date: string, totalAmount: number, time = Date.now()) {
   const userId = await getUserId();
   if (!userId) throw new Error('User not logged in');
