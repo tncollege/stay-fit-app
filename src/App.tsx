@@ -112,6 +112,27 @@ export default function App() {
             (cloudProfile as any).currentWeight
           );
 
+          // If this desktop/browser already has a local profile but Supabase has none,
+          // upload it automatically once. This fixes mobile asking onboarding again.
+          if (!hasCloudProfile) {
+            const localProfile = data.profile;
+            const hasLocalProfile = Boolean(
+              localProfile.name ||
+              localProfile.age ||
+              localProfile.height ||
+              localProfile.currentWeight
+            );
+
+            if (hasLocalProfile) {
+              try {
+                await saveProfile(localProfile);
+                console.log('Local profile uploaded to Supabase ✅');
+              } catch (err) {
+                console.error('Local profile autosync error ❌', err);
+              }
+            }
+          }
+
           setData((prev: AppData) => ({
             ...prev,
             ...cloud,
