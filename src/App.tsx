@@ -73,6 +73,9 @@ export default function App() {
       const session = await getSession();
       if (!mounted) return;
       setLoggedIn(Boolean(session));
+      if (session) {
+        setViewDate(getTodayKey());
+      }
       setCheckingAuth(false);
     }
 
@@ -83,6 +86,9 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
       setLoggedIn(Boolean(session));
+      if (session) {
+        setViewDate(getTodayKey());
+      }
       setCheckingAuth(false);
     });
 
@@ -94,6 +100,8 @@ export default function App() {
 
   useEffect(() => {
     if (!loggedIn) return;
+
+    setViewDate(getTodayKey());
 
     let cancelled = false;
 
@@ -1403,27 +1411,30 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
   const handleLogSteps = async () => {
     const steps = Number(logSteps);
     if (isNaN(steps)) return;
-    
+
     setData((prev: AppData) => ({
       ...prev,
-      steps: { ...prev.steps, [logDate]: steps }
+      steps: { ...(prev.steps || {}), [logDate]: steps },
+      lastSyncDate: new Date().toISOString(),
     }));
+
     try {
       await saveSteps(logDate, steps);
-      setViewDate(logDate); // keep Dashboard Movement Cycle on the same date that was updated
+      setViewDate(logDate);
+
       const cloud = await loadCloudData();
-      if (cloud?.steps) {
-        setData((prev: AppData) => ({
-          ...prev,
-          steps: cloud.steps as any,
-          lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
-        }));
-      }
+      setData((prev: AppData) => ({
+        ...prev,
+        steps: { ...((cloud?.steps as any) || prev.steps || {}), [logDate]: steps },
+        lastSyncDate: cloud?.lastSyncDate || new Date().toISOString(),
+      }));
+
+      setLogSteps(String(steps));
+      alert("Step matrix updated. Dashboard Movement Cycle refreshed.");
     } catch (err) {
-      console.error('Steps save error ❌', err);
+      console.error("Steps save error ❌", err);
+      alert("Steps save failed. Please run the latest supabase_schema.sql and try again.");
     }
-    setLogSteps('');
-    alert("Step matrix updated. Dashboard Movement Cycle refreshed.");
   };
 
   const handleDeleteWeight = async (date: string) => {

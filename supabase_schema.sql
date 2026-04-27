@@ -170,3 +170,25 @@ notify pgrst, 'reload schema';
 -- Ensure workout upserts can target id and API schema cache is fresh
 create unique index if not exists workouts_id_unique on public.workouts(id);
 notify pgrst, 'reload schema';
+
+-- Safety migration for existing projects: required by upsert(... onConflict: 'user_id,date')
+-- Keep only the latest row if duplicate date rows already exist.
+delete from public.steps a
+using public.steps b
+where a.user_id = b.user_id
+  and a.date = b.date
+  and a.created_at < b.created_at;
+
+delete from public.weights a
+using public.weights b
+where a.user_id = b.user_id
+  and a.date = b.date
+  and a.created_at < b.created_at;
+
+alter table public.steps drop constraint if exists steps_user_date_unique;
+alter table public.steps add constraint steps_user_date_unique unique (user_id, date);
+
+alter table public.weights drop constraint if exists weights_user_date_unique;
+alter table public.weights add constraint weights_user_date_unique unique (user_id, date);
+
+notify pgrst, 'reload schema';
