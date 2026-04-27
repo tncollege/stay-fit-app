@@ -252,7 +252,7 @@ export default function App() {
       case 'workout': return <WorkoutView data={data} setData={setData} viewDate={viewDate} setViewDate={setViewDate} />;
       case 'coach': return <Coach data={data} setData={setData} />;
       case 'profile': return <ProfileView data={data} setData={setData} />;
-      case 'progress': return <Progress data={data} setData={setData} setActiveTab={setActiveTab} viewDate={viewDate} />;
+      case 'progress': return <Progress data={data} setData={setData} setActiveTab={setActiveTab} viewDate={viewDate} setViewDate={setViewDate} />;
       case 'settings': return <SettingsView data={data} setData={setData} />;
       default: return <Dashboard data={data} setData={setData} setActiveTab={setActiveTab} viewDate={viewDate} setViewDate={setViewDate} />;
     }
@@ -1265,7 +1265,7 @@ function ProfileView({ data, setData }: any) {
     </div>
   ); 
 }
-function Progress({ data, setData, setActiveTab, viewDate }: { data: AppData, setData: any, setActiveTab: (t: string) => void, viewDate: string }) { 
+function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data: AppData, setData: any, setActiveTab: (t: string) => void, viewDate: string, setViewDate: (d: string) => void }) { 
   const [logWeight, setLogWeight] = useState('');
   const [logSteps, setLogSteps] = useState('');
   const [logDate, setLogDate] = useState(viewDate);
@@ -1311,6 +1311,7 @@ function Progress({ data, setData, setActiveTab, viewDate }: { data: AppData, se
     });
     try {
       await saveWeight(logDate, weight);
+      setViewDate(logDate);
     } catch (err) {
       console.error('Weight save error ❌', err);
     }
@@ -1328,11 +1329,20 @@ function Progress({ data, setData, setActiveTab, viewDate }: { data: AppData, se
     }));
     try {
       await saveSteps(logDate, steps);
+      setViewDate(logDate); // keep Dashboard Movement Cycle on the same date that was updated
+      const cloud = await loadCloudData();
+      if (cloud?.steps) {
+        setData((prev: AppData) => ({
+          ...prev,
+          steps: cloud.steps as any,
+          lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
+        }));
+      }
     } catch (err) {
       console.error('Steps save error ❌', err);
     }
     setLogSteps('');
-    alert("Step matrix updated.");
+    alert("Step matrix updated. Dashboard Movement Cycle refreshed.");
   };
 
   const handleCloudSync = async (source: string) => {
