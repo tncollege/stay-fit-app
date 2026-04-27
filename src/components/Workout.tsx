@@ -63,6 +63,7 @@ export default function WorkoutView({
   const [selectedYogaSub, setSelectedYogaSub] = useState<string>('Vinyasa');
 
   const [currentSets, setCurrentSets] = useState<any[]>([]);
+  const [workoutName, setWorkoutName] = useState('');
   const [exercise, setExercise] = useState('');
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
@@ -156,6 +157,7 @@ export default function WorkoutView({
       weight: finalWeight,
       reps,
       rpe,
+      muscle: selectedMuscle,
       id: crypto.randomUUID(),
     };
 
@@ -306,11 +308,19 @@ export default function WorkoutView({
   const handleFinishWorkout = async () => {
     if (currentSets.length === 0) return;
 
+    const workoutMuscles = Array.from(
+      new Set(currentSets.map((s: any) => s.muscle || selectedMuscle).filter(Boolean))
+    );
+    const autoWorkoutName =
+      workoutMuscles.length > 1
+        ? `${workoutMuscles.join(' + ')} Workout`
+        : `${workoutMuscles[0] || selectedMuscle} Workout`;
+
     const newWorkout: Workout = {
       id: crypto.randomUUID(),
-      name: `${selectedMuscle} Workout`,
+      name: workoutName.trim() || autoWorkoutName,
       category: 'Strength',
-      muscles: [selectedMuscle],
+      muscles: workoutMuscles.length ? workoutMuscles : [selectedMuscle],
       sets: currentSets,
       caloriesBurned: Math.round(currentSets.length * 25),
     };
@@ -319,6 +329,7 @@ export default function WorkoutView({
 
     setCurrentSets([]);
     setExercise('');
+    setWorkoutName('');
     setTimerActive(false);
     setTimerTime(60);
     setRecoveryReason('');
@@ -397,6 +408,15 @@ export default function WorkoutView({
 
   return (
     <>
+      {timerActive && (
+        <div className="fixed top-24 right-4 z-[95] rounded-2xl border border-lime/30 bg-panel/95 px-5 py-4 text-lime shadow-xl shadow-lime/20 backdrop-blur-md">
+          <div className="text-[9px] font-black uppercase tracking-widest opacity-70">Rest Timer</div>
+          <div className="text-2xl font-black font-mono">
+            {Math.floor(timerTime / 60)}:{String(timerTime % 60).padStart(2, '0')}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
@@ -488,6 +508,8 @@ export default function WorkoutView({
                   setEditReps={setEditReps}
                   handleStartEditingSet={handleStartEditingSet}
                   handleUpdateSet={handleUpdateSet}
+                  workoutName={workoutName}
+                  setWorkoutName={setWorkoutName}
                   handleFinishWorkout={handleFinishWorkout}
                 />
               ) : activeTab === 'cardio' ? (
@@ -684,6 +706,8 @@ function StrengthPanel(props: any) {
     setEditReps,
     handleStartEditingSet,
     handleUpdateSet,
+    workoutName,
+    setWorkoutName,
     handleFinishWorkout,
   } = props;
 
@@ -884,14 +908,25 @@ function StrengthPanel(props: any) {
 
       {currentSets.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-          <div className="flex justify-between items-center mb-6">
-            <div className="label-small text-lime">Active Bio-Calibration Session</div>
-            <button
-              onClick={handleFinishWorkout}
-              className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all"
-            >
-              Submit Session
-            </button>
+          <div className="space-y-4 mb-6">
+            <div>
+              <div className="label-small text-muted mb-2 ml-1">Workout Name</div>
+              <input
+                value={workoutName}
+                onChange={(e) => setWorkoutName(e.target.value)}
+                className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
+                placeholder="Push, Pull, Upper Body, Full Body..."
+              />
+            </div>
+            <div className="flex justify-between items-center">
+              <div className="label-small text-lime">Active Bio-Calibration Session</div>
+              <button
+                onClick={handleFinishWorkout}
+                className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all"
+              >
+                Submit Session
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2">

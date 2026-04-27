@@ -237,6 +237,7 @@ export async function saveSteps(date: string, steps: number) {
   if (error) throw error;
 }
 
+
 export async function deleteWeightFromCloud(date: string) {
   const userId = await getUserId();
   if (!userId) throw new Error('User not logged in');
