@@ -23,6 +23,19 @@ import { STORE_KEY, storageAdapter } from './services/storage';
 import { loadCloudData, saveProfile, saveWeight, saveSteps, saveWaterTotal, deleteWeightFromCloud, deleteStepsFromCloud, syncLocalDataToCloud, hasMeaningfulLocalData, hasMeaningfulCloudData } from './services/cloudDataService';
 import { FOOD_DATABASE, EXERCISE_DATABASE } from './data/database';
 
+function showAppMessage(message: string) {
+  if (typeof document === 'undefined') return;
+  const existing = document.getElementById('stayfitinlife-toast');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.id = 'stayfitinlife-toast';
+  el.textContent = message;
+  el.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-2xl bg-lime text-dark text-xs font-black uppercase tracking-widest shadow-2xl shadow-lime/20 border border-lime/30 max-w-[90vw] text-center';
+  document.body.appendChild(el);
+  window.setTimeout(() => el.remove(), 2800);
+}
+
 const DEFAULT_DATA: AppData = {
   profile: {
     unitsSystem: 'metric',
@@ -1404,7 +1417,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       window.setTimeout(() => window.location.reload(), 250);
     } catch (err) {
       console.error('Weight save error ❌', err);
-      alert('Weight save failed. Please check Supabase weights unique constraint and try again.');
+      showAppMessage('Unable to save weight. Please try again.');
     }
   };
 
@@ -1430,10 +1443,10 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       }));
 
       setLogSteps(String(steps));
-      alert("Step matrix updated. Dashboard Movement Cycle refreshed.");
+      showAppMessage("Steps updated. Dashboard refreshed.");
     } catch (err) {
       console.error("Steps save error ❌", err);
-      alert("Steps save failed. Please run the latest supabase_schema.sql and try again.");
+      showAppMessage("Unable to save steps. Please try again.");
     }
   };
 
@@ -1448,7 +1461,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       setData((prev: AppData) => ({ ...prev, weights: (cloud?.weights as any) || [] }));
     } catch (err) {
       console.error('Weight delete error ❌', err);
-      alert('Weight delete failed. Check console.');
+      showAppMessage('Unable to delete weight entry. Please try again.');
     }
   };
 
@@ -1464,12 +1477,12 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       setData((prev: AppData) => ({ ...prev, steps: (cloud?.steps as any) || {} }));
     } catch (err) {
       console.error('Steps delete error ❌', err);
-      alert('Steps delete failed. Check console.');
+      showAppMessage('Unable to delete steps entry. Please try again.');
     }
   };
 
   const handleCloudSync = async (source: string) => {
-    alert(`${source} direct sync needs a native HealthKit/Health Connect/WHOOP integration. Use manual entry or CSV import for now.`);
+    showAppMessage('Direct sync is not available yet. Please use manual entry or CSV import.');
   };
 
   const isMetric = data.profile.unitsSystem === 'metric';
