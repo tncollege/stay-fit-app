@@ -164,6 +164,54 @@ export default function App() {
   }, [loggedIn]);
 
   useEffect(() => {
+    if (!loggedIn) return;
+
+    let cancelled = false;
+
+    const refreshCloudData = async () => {
+      try {
+        const cloud = await loadCloudData();
+        if (cancelled || !cloud) return;
+
+        setData((prev: AppData) => ({
+          ...prev,
+          profile: cloud.profile && Object.keys(cloud.profile).length > 0
+            ? { ...prev.profile, ...cloud.profile }
+            : prev.profile,
+          introSeen: cloud.profile && Object.keys(cloud.profile).length > 0 ? true : prev.introSeen,
+          // For synced tables, cloud is the source of truth. This lets deletes on desktop disappear on mobile.
+          meals: (cloud.meals as any) || {},
+          workouts: (cloud.workouts as any) || {},
+          weights: (cloud.weights as any) || [],
+          steps: (cloud.steps as any) || {},
+          water: (cloud.water as any) || {},
+          lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
+        }));
+      } catch (err) {
+        console.error('Cloud refresh error ❌', err);
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        refreshCloudData();
+      }
+    };
+
+    window.addEventListener('focus', refreshCloudData);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    const intervalId = window.setInterval(refreshCloudData, 15000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshCloudData);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.clearInterval(intervalId);
+    };
+  }, [loggedIn]);
+
+
+  useEffect(() => {
     storageAdapter.save(data);
   }, [data]);
 

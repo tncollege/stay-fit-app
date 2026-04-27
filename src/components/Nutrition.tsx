@@ -8,7 +8,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { searchFoodNutrition } from '../services/aiService';
 import { Brain, Sparkles, PlusCircle } from 'lucide-react';
 import DateNavigator from './DateNavigator';
-import { deleteMealFromCloud, saveMeal, saveWater } from '../services/cloudDataService';
+import { deleteMealFromCloud, deleteWaterFromCloud, saveMeal, saveWaterTotal } from '../services/cloudDataService';
 
 export default function Nutrition({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
   const [selectedMeal, setSelectedMeal] = useState('Breakfast');
@@ -264,6 +264,23 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     }
   };
 
+  const clearWater = async () => {
+    setData((prev: AppData) => ({
+      ...prev,
+      water: {
+        ...prev.water,
+        [viewDate]: []
+      }
+    }));
+
+    try {
+      await deleteWaterFromCloud(viewDate);
+      console.log('Water deleted from Supabase ✅');
+    } catch (err) {
+      console.error('Water delete error ❌', err);
+    }
+  };
+
   const handleEditMeal = (meal: Meal) => {
     setSelectedFood(meal);
     setQty(Number(meal.qty) || 1);
@@ -411,24 +428,38 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
           </div>
 
           <div className="stat-card">
-            <div className="label-small mb-4 text-sky">Hydration Tracker</div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="label-small text-sky">Hydration Tracker</div>
+              {waterTotalMl > 0 && (
+                <button
+                  onClick={clearWater}
+                  className="px-3 py-2 rounded-xl bg-white/5 border border-sky/20 text-sky text-[9px] font-black uppercase tracking-widest hover:bg-sky/10 transition-all"
+                >
+                  Clear Water
+                </button>
+              )}
+            </div>
             <div className="flex gap-2">
               {[250, 500, 750].map(amt => (
                 <button 
                   key={amt}
                   onClick={async () => {
                     const time = Date.now();
+                    const currentTotal = (data.water[viewDate] || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                    const newTotal = currentTotal + amt;
+
+                    // Store water as ONE daily total so devices do not merge/double-count values.
                     setData((prev: AppData) => ({
                       ...prev,
                       water: {
                         ...prev.water,
-                        [viewDate]: [...(prev.water[viewDate] || []), { amount: amt, time }]
+                        [viewDate]: [{ amount: newTotal, time }]
                       }
                     }));
 
                     try {
-                      await saveWater(viewDate, amt, time);
-                      console.log('Water saved to Supabase ✅');
+                      await saveWaterTotal(viewDate, newTotal, time);
+                      console.log('Water total saved to Supabase ✅');
                     } catch (err) {
                       console.error('Water save error ❌', err);
                     }

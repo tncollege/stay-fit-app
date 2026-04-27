@@ -99,9 +99,30 @@ create table if not exists water (
   date text not null,
   amount numeric default 0,
   logged_at timestamptz not null default now(),
-  created_at timestamptz default now(),
-  unique(user_id, logged_at)
+  created_at timestamptz default now()
 );
+
+-- Water is one daily total per user/date. Dedupe old multi-row water logs safely.
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'water') then
+    create temporary table water_daily_totals as
+      select user_id, date, sum(coalesce(amount, 0)) as amount, max(logged_at) as logged_at
+      from public.water
+      group by user_id, date;
+
+    delete from public.water;
+
+    insert into public.water (id, user_id, date, amount, logged_at, created_at)
+      select gen_random_uuid(), user_id, date, amount, coalesce(logged_at, now()), now()
+      from water_daily_totals;
+
+    drop table water_daily_totals;
+  end if;
+end $$;
+
+alter table water drop constraint if exists water_user_id_logged_at_key;
+alter table water add constraint water_user_id_date_key unique(user_id, date);
 
 alter table profiles enable row level security;
 alter table meals enable row level security;

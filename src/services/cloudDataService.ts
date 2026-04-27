@@ -50,11 +50,12 @@ function mapSteps(rows: any[]): Record<string, number> {
 
 function groupWater(rows: any[]): Record<string, WaterLog[]> {
   return rows.reduce((acc: Record<string, WaterLog[]>, row) => {
-    if (!acc[row.date]) acc[row.date] = [];
-    acc[row.date].push({
+    // Water is stored as ONE daily total per user/date.
+    // We replace by date instead of appending so mobile/desktop values never double-count.
+    acc[row.date] = [{
       amount: Number(row.amount || 0),
       time: row.logged_at ? new Date(row.logged_at).getTime() : Number(row.time || Date.now()),
-    });
+    }];
     return acc;
   }, {});
 }
@@ -212,21 +213,31 @@ export async function saveSteps(date: string, steps: number) {
   if (error) throw error;
 }
 
-export async function saveWater(date: string, amount: number, time = Date.now()) {
+export async function saveWaterTotal(date: string, totalAmount: number, time = Date.now()) {
   const userId = await getUserId();
   if (!userId) throw new Error('User not logged in');
 
-  const loggedAt = new Date(time).toISOString();
   const { error } = await supabase.from('water').upsert(
     {
       user_id: userId,
       date,
-      amount,
-      logged_at: loggedAt,
+      amount: totalAmount,
+      logged_at: new Date(time).toISOString(),
     },
-    { onConflict: 'user_id,logged_at' }
+    { onConflict: 'user_id,date' }
   );
 
+  if (error) throw error;
+}
+
+// Backward-compatible alias. It now saves the daily total, not a separate water log.
+export const saveWater = saveWaterTotal;
+
+export async function deleteWaterFromCloud(date: string) {
+  const userId = await getUserId();
+  if (!userId) throw new Error('User not logged in');
+
+  const { error } = await supabase.from('water').delete().eq('user_id', userId).eq('date', date);
   if (error) throw error;
 }
 
@@ -295,9 +306,9 @@ export async function syncLocalDataToCloud(data: AppData) {
   }
 
   for (const [date, logs] of Object.entries(data.water || {})) {
-    for (const log of logs as WaterLog[]) {
-      await saveWater(date, Number(log.amount || 0), Number(log.time || Date.now()));
-    }
+    const total = (logs as WaterLog[]).reduce((sum, log) => sum + Number(log.amount || 0), 0);
+    const lastTime = (logs as WaterLog[]).reduce((max, log) => Math.max(max, Number(log.time || 0)), 0) || Date.now();
+    await saveWaterTotal(date, total, lastTime);
   }
 
   localStorage.setItem('stayfitinlife_cloud_synced', 'v3');
