@@ -11,6 +11,10 @@ import {
 
 type AuthMode = 'login' | 'forgot' | 'reset';
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+}
+
 export default function Auth({ onAuth }: { onAuth: () => void }) {
   const initialMode = useMemo<AuthMode>(() => {
     const url = new URL(window.location.href);
@@ -29,89 +33,76 @@ export default function Auth({ onAuth }: { onAuth: () => void }) {
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
-    if (!email || !password) {
-      return alert('Please enter email and password.');
-    }
+    if (!email || !password) return alert('Please enter email and password.');
 
     setLoading(true);
-    const { error } = await signIn(email, password);
-    setLoading(false);
-
-    if (error) {
-      return alert(error.message);
+    try {
+      await signIn(email, password);
+      onAuth();
+    } catch (error) {
+      alert(getErrorMessage(error));
+    } finally {
+      setLoading(false);
     }
-
-    onAuth();
   }
 
   async function handleSignup() {
-    if (!email || !password) {
-      return alert('Please enter email and password.');
-    }
-
-    if (password.length < 6) {
-      return alert('Password must be at least 6 characters.');
-    }
+    if (!email || !password) return alert('Please enter email and password.');
+    if (password.length < 6) return alert('Password must be at least 6 characters.');
 
     setLoading(true);
-    const { error } = await signUp(email, password);
-    setLoading(false);
-
-    if (error) {
-      return alert(error.message);
+    try {
+      await signUp(email, password);
+      alert('Account created. Check your email if confirmation is enabled, then login.');
+    } catch (error) {
+      alert(getErrorMessage(error));
+    } finally {
+      setLoading(false);
     }
-
-    alert('Account created. Check your email if confirmation is enabled, then login.');
   }
 
   async function handleForgotPassword() {
-    if (!email) {
-      return alert('Please enter your email first.');
-    }
+    if (!email) return alert('Please enter your email first.');
 
     setLoading(true);
-    const { error } = await resetPassword(email);
-    setLoading(false);
-
-    if (error) {
-      return alert(error.message);
+    try {
+      await resetPassword(email);
+      alert('Password reset link sent. Check your email.');
+      setMode('login');
+    } catch (error) {
+      alert(getErrorMessage(error));
+    } finally {
+      setLoading(false);
     }
-
-    alert('Password reset link sent. Check your email.');
-    setMode('login');
   }
 
   async function handleUpdatePassword() {
-    if (!newPassword) {
-      return alert('Please enter a new password.');
-    }
-
-    if (newPassword.length < 6) {
-      return alert('Password must be at least 6 characters.');
-    }
+    if (!newPassword) return alert('Please enter a new password.');
+    if (newPassword.length < 6) return alert('Password must be at least 6 characters.');
 
     setLoading(true);
-    const { error } = await updatePassword(newPassword);
-    setLoading(false);
-
-    if (error) {
-      return alert(error.message);
+    try {
+      await updatePassword(newPassword);
+      await signOut();
+      alert('Password updated. Please login again.');
+      window.history.replaceState({}, document.title, '/');
+      setMode('login');
+      setNewPassword('');
+    } catch (error) {
+      alert(getErrorMessage(error));
+    } finally {
+      setLoading(false);
     }
-
-    await signOut();
-    alert('Password updated. Please login again.');
-    window.history.replaceState({}, document.title, '/');
-    setMode('login');
-    setNewPassword('');
   }
 
   async function handleOAuth(provider: 'google' | 'apple') {
     setLoading(true);
-    const { error } = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
-    setLoading(false);
-
-    if (error) {
-      alert(error.message);
+    try {
+      const result = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+      if (result.error) throw result.error;
+    } catch (error) {
+      alert(getErrorMessage(error));
+      setLoading(false);
     }
   }
 

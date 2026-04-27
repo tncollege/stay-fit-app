@@ -5,6 +5,7 @@ import { AppData, Workout } from '../lib/types';
 import { EXERCISE_DATABASE } from '../data/database';
 import { searchExerciseInfo, calculateRecoveryTime } from '../services/aiService';
 import DateNavigator from './DateNavigator';
+import { saveWorkout } from '../services/cloudDataService';
 
 const CATEGORY_IMAGES: Record<string, string> = {
   "Chest": "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop",
@@ -215,12 +216,7 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
     }));
 
     try {
-      await saveWorkout({
-        date: viewDate,
-        workout: newWorkout.name,
-        duration: durationNum,
-        calories,
-      });
+      await saveWorkout(viewDate, newWorkout);
       console.log('Workout saved to Supabase ✅');
     } catch (err) {
       console.error('Supabase workout save error ❌', err);
@@ -252,12 +248,7 @@ export default function WorkoutView({ data, setData, viewDate, setViewDate }: { 
     }));
 
     try {
-      await saveWorkout({
-        date: viewDate,
-        workout: newWorkout.name,
-        duration: currentSets.length * 5,
-        calories: newWorkout.caloriesBurned,
-      });
+      await saveWorkout(viewDate, newWorkout);
       console.log('Workout saved to Supabase ✅');
     } catch (err) {
       console.error('Supabase workout save error ❌', err);

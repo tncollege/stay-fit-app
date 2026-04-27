@@ -1,30 +1,25 @@
 import { supabase } from './supabaseClient';
 
 export async function signUp(email: string, password: string) {
-  return supabase.auth.signUp({
-    email,
-    password,
-  });
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
 }
 
 export async function signIn(email: string, password: string) {
-  return supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
 }
 
 export async function signOut() {
-  return supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
 }
 
 export async function getCurrentUser() {
   const { data, error } = await supabase.auth.getUser();
-
-  if (error) {
-    return null;
-  }
-
+  if (error) return null;
   return data.user;
 }
 
@@ -33,30 +28,34 @@ export async function getSession() {
   return data.session;
 }
 
-export async function resetPassword(email: string) {
-  return supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/reset-password`,
+export function onAuthStateChange(callback: (user: any) => void) {
+  return supabase.auth.onAuthStateChange((_event, session) => {
+    callback(session?.user || null);
   });
 }
 
+export async function resetPassword(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+  if (error) throw error;
+}
+
 export async function updatePassword(newPassword: string) {
-  return supabase.auth.updateUser({ password: newPassword });
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 }
 
 export async function signInWithGoogle() {
   return supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: {
-      redirectTo: window.location.origin,
-    },
+    options: { redirectTo: window.location.origin },
   });
 }
 
 export async function signInWithApple() {
   return supabase.auth.signInWithOAuth({
     provider: 'apple',
-    options: {
-      redirectTo: window.location.origin,
-    },
+    options: { redirectTo: window.location.origin },
   });
 }

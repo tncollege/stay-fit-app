@@ -8,7 +8,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { searchFoodNutrition } from '../services/aiService';
 import { Brain, Sparkles, PlusCircle } from 'lucide-react';
 import DateNavigator from './DateNavigator';
-import { saveNutrition } from '../services/nutritionService';
+import { deleteMealFromCloud, saveMeal } from '../services/cloudDataService';
 
 export default function Nutrition({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
   const [selectedMeal, setSelectedMeal] = useState('Breakfast');
@@ -148,17 +148,21 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     });
 
     try {
-      await saveNutrition({
+      await saveMeal({
+        id: newMeal.id,
         date: viewDate,
-        meal: mealName,
+        name: mealName,
+        meal_type: selectedMeal,
         calories: Number(finalMacros.cal) || 0,
         protein: Number(finalMacros.p) || 0,
         carbs: Number(finalMacros.c) || 0,
         fats: Number(finalMacros.f) || 0,
+        quantity: Number(qty) || 1,
+        unit: unitLabel || 'portion',
       });
-      console.log('Nutrition saved to Supabase ✅');
+      console.log('Meal saved to Supabase ✅');
     } catch (err) {
-      console.error('Nutrition save error ❌', err);
+      console.error('Meal save error ❌', err);
     }
 
     setSelectedFood(null);
@@ -201,17 +205,21 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
       };
     });
     try {
-      await saveNutrition({
+      await saveMeal({
+        id: newMeal.id,
         date: viewDate,
-        meal: customFood.name,
+        name: customFood.name,
+        meal_type: selectedMeal,
         calories: Number(customFood.calories) || 0,
         protein: Number(customFood.protein) || 0,
         carbs: Number(customFood.carbs) || 0,
         fats: Number(customFood.fats) || 0,
+        quantity: 1,
+        unit: customFood.unit || 'portion',
       });
-      console.log('Nutrition saved to Supabase ✅');
+      console.log('Meal saved to Supabase ✅');
     } catch (err) {
-      console.error('Nutrition save error ❌', err);
+      console.error('Meal save error ❌', err);
     }
 
     setShowCustomForm(false);
@@ -238,7 +246,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     return matchesSearch && matchesMain && matchesSub;
   });
 
-  const deleteMeal = (id: string) => {
+  const deleteMeal = async (id: string) => {
     setData((prev: AppData) => ({
       ...prev,
       meals: {
@@ -246,6 +254,12 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         [viewDate]: prev.meals[viewDate].filter(m => m.id !== id)
       }
     }));
+
+    try {
+      await deleteMealFromCloud(id);
+    } catch (err) {
+      console.error('Meal delete error ❌', err);
+    }
   };
 
   const handleEditMeal = (meal: Meal) => {

@@ -19,7 +19,8 @@ import DateNavigator from './components/DateNavigator';
 import { AppData, Profile, Meal, Workout, WaterLog, Recovery } from './lib/types';
 import { getTodayKey, round, idealWeightRange, kgToLb, lbToKg, cmToFtIn, ftInToCm, estimatedTargetFromFat, estimatedFatFromTarget } from './lib/utils';
 import { askAiCoach, analyzeGoal, generateDailyInsight } from './services/aiService';
-import { storageAdapter } from './services/storage';
+import { STORE_KEY, storageAdapter } from './services/storage';
+import { loadCloudData, saveProfile, saveWeight, saveSteps } from './services/cloudDataService';
 import { FOOD_DATABASE, EXERCISE_DATABASE } from './data/database';
 
 const DEFAULT_DATA: AppData = {
@@ -89,6 +90,40 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+
+    let cancelled = false;
+
+    async function loadFromCloud() {
+      try {
+        const cloud = await loadCloudData();
+        if (cancelled || !cloud) return;
+
+        setData((prev: AppData) => ({
+          ...prev,
+          ...cloud,
+          profile: {
+            ...prev.profile,
+            ...(cloud.profile || {}),
+          },
+          meals: cloud.meals || prev.meals,
+          workouts: cloud.workouts || prev.workouts,
+          weights: cloud.weights || prev.weights,
+          steps: cloud.steps || prev.steps,
+        }));
+      } catch (err) {
+        console.error('Cloud data load error ❌', err);
+      }
+    }
+
+    loadFromCloud();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedIn]);
 
   useEffect(() => {
     storageAdapter.save(data);
@@ -631,11 +666,16 @@ function Onboarding({ data, setData }: { data: AppData, setData: any }) {
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step < 2) setStep(step + 1);
     else {
       const finalProfile = { ...tempProfile, startWeight: tempProfile.currentWeight };
       setData((prev: AppData) => ({ ...prev, profile: finalProfile, introSeen: true }));
+      try {
+        await saveProfile(finalProfile);
+      } catch (err) {
+        console.error('Profile save error ❌', err);
+      }
     }
   };
 
@@ -1094,7 +1134,14 @@ function ProfileView({ data, setData }: any) {
             </div>
           </div>
           <button 
-            onClick={() => { setData({...data, profile: temp}); }} 
+            onClick={async () => {
+              setData({...data, profile: temp});
+              try {
+                await saveProfile(temp);
+              } catch (err) {
+                console.error('Profile save error ❌', err);
+              }
+            }} 
             className="w-full md:w-auto px-12 py-5 bg-lime text-dark font-black rounded-2xl shadow-xl shadow-lime/20 uppercase text-xs tracking-widest active:scale-95 transition-all"
           >
             Synchronize Data
@@ -1164,7 +1211,7 @@ function Progress({ data, setData, setActiveTab, viewDate }: { data: AppData, se
     return { start, current, target, diff, toGoal, progress };
   }, [data.profile, data.weights]);
 
-  const handleLogWeight = () => {
+  const handleLogWeight = async () => {
     const weight = Number(logWeight);
     if (!weight) return;
     
@@ -1176,11 +1223,16 @@ function Progress({ data, setData, setActiveTab, viewDate }: { data: AppData, se
         profile: { ...prev.profile, currentWeight: weight }
       };
     });
+    try {
+      await saveWeight(logDate, weight);
+    } catch (err) {
+      console.error('Weight save error ❌', err);
+    }
     setLogWeight('');
     alert("Weight synchronized to neural history.");
   };
 
-  const handleLogSteps = () => {
+  const handleLogSteps = async () => {
     const steps = Number(logSteps);
     if (isNaN(steps)) return;
     
@@ -1188,6 +1240,11 @@ function Progress({ data, setData, setActiveTab, viewDate }: { data: AppData, se
       ...prev,
       steps: { ...prev.steps, [logDate]: steps }
     }));
+    try {
+      await saveSteps(logDate, steps);
+    } catch (err) {
+      console.error('Steps save error ❌', err);
+    }
     setLogSteps('');
     alert("Step matrix updated.");
   };

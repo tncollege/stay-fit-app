@@ -1,35 +1,36 @@
-# STAYFITINLIFE
+# StayFitInLife / Gym-E
 
-STAYFITINLIFE is an AI-powered fitness, nutrition, workout, progress, and recovery tracking app. It includes Supabase authentication, Gym-E AI guidance, workout logging, nutrition tracking, progress charts, and a mobile-friendly interface.
+AI-powered fitness, nutrition, workout, and progress tracking app with Supabase auth, cloud database sync, and a Render-hosted AI backend.
 
 ## Features
 
-- Email/password signup and login with Supabase Auth
-- Forgot password and reset password flow
-- Google login and Apple login hooks through Supabase OAuth
-- Gym-E AI assistant for goal analysis, daily insights, meal help, workout plans, and supplement guidance
-- Workout logging with strength, cardio, sports, and yoga flows
-- Nutrition and water tracking
-- Weight and steps progress charts
-- Mobile and desktop app icons with web manifest
-- Netlify frontend deployment support
-- Render backend deployment support for AI requests
+- Email/password login
+- Google login
+- Apple login
+- Password reset flow
+- Gym-E AI coach
+- Nutrition logging with macros
+- Workout logging
+- Weight and steps tracking
+- Supabase cloud sync for user data
+- Netlify-ready frontend
+- Render-ready backend for AI calls
+- PWA manifest and app icons
 
 ## Tech Stack
 
-- React + Vite
-- TypeScript
-- Tailwind CSS utility classes
-- Supabase Auth
-- OpenAI API through an Express backend
-- Netlify for frontend hosting
-- Render for backend hosting
+- React + Vite + TypeScript
+- Tailwind-style utility classes
+- Supabase Auth + Postgres
+- OpenAI API via Express backend
+- Netlify frontend deployment
+- Render backend deployment
 
 ## Required Environment Variables
 
-### Frontend: Netlify
+### Netlify frontend
 
-Add these to Netlify environment variables:
+Add these in Netlify → Site configuration → Environment variables:
 
 ```env
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
@@ -38,147 +39,89 @@ VITE_API_URL=https://your-render-backend.onrender.com
 SECRETS_SCAN_ENABLED=false
 ```
 
-Do not add backend secrets to Netlify.
+### Render backend
 
-### Backend: Render
-
-Add this to Render environment variables:
+Add these in Render → Environment:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
+NODE_ENV=production
 ```
 
-Optional if you later add admin backend operations:
-
-```env
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-```
-
-Never expose the service role key in frontend code.
+Do not put `OPENAI_API_KEY` in Netlify.
 
 ## Supabase Setup
 
-### 1. Enable Email Auth
-
-Supabase Dashboard → Authentication → Providers → Email.
-
-For testing, you may disable email confirmation. For production, enable email confirmation.
-
-### 2. Password Reset Redirect URL
-
-Supabase Dashboard → Authentication → URL Configuration.
-
-Add these redirect URLs:
+1. Open Supabase SQL Editor.
+2. Paste and run `supabase_schema.sql` from this repository.
+3. Go to Authentication → Providers.
+4. Enable Email, Google, and Apple as needed.
+5. Go to Authentication → URL Configuration.
+6. Set Site URL:
 
 ```txt
-https://your-domain.com/reset-password
-https://your-netlify-site.netlify.app/reset-password
+https://stayfitinlife.com
+```
+
+7. Add Redirect URLs:
+
+```txt
+https://stayfitinlife.com
+https://www.stayfitinlife.com
+http://localhost:5173
 http://localhost:5173/reset-password
 ```
 
-### 3. Google Login
-
-Supabase Dashboard → Authentication → Providers → Google.
-
-Enable Google and add the Google OAuth client ID/secret from Google Cloud Console. Also add Supabase's callback URL to Google OAuth redirect URIs.
-
-### 4. Apple Login
-
-Supabase Dashboard → Authentication → Providers → Apple.
-
-Enable Apple and add the required Apple Services ID, Team ID, Key ID, and private key. Apple login requires Apple Developer account configuration.
-
 ## Local Development
-
-Install dependencies:
 
 ```bash
 npm install
-```
-
-Create `.env` in the project root:
-
-```env
-VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_API_URL=http://localhost:3000
-OPENAI_API_KEY=your_openai_api_key
-```
-
-Run backend:
-
-```bash
 npm run dev
 ```
 
-Run frontend in another terminal:
+Create a local `.env` file from `.env.example`.
 
-```bash
-npm run client
-```
-
-Open:
-
-```txt
-http://localhost:5173
-```
-
-## Deploy Frontend on Netlify
-
-Build command:
+## Build
 
 ```bash
 npm run build
 ```
 
-Publish directory:
+## Netlify Deploy
+
+Netlify settings:
 
 ```txt
-dist
+Build command: npm run build
+Publish directory: dist
 ```
 
-Add Netlify environment variables listed above.
+The repository includes `netlify.toml` with SPA redirects and secret scan disabled for public Vite variables.
 
-## Deploy Backend on Render
+## Render Deploy
 
-Create a Render Web Service connected to this GitHub repo.
-
-Build command:
-
-```bash
-npm install
-```
-
-Start command:
-
-```bash
-npm run dev
-```
-
-Add `OPENAI_API_KEY` in Render environment variables.
-
-Health check:
+Render settings:
 
 ```txt
-https://your-render-backend.onrender.com/api/health
+Build command: npm install && npm run build
+Start command: npm start
 ```
 
-Expected response:
+If your `package.json` start script is `tsx server.ts`, use:
 
-```json
-{
-  "status": "ok",
-  "openai_configured": true
-}
+```txt
+npm run start
 ```
 
-## Important Security Notes
+or set the Render start command to:
 
-- `VITE_*` variables are public in the browser.
-- Keep `OPENAI_API_KEY` only on Render.
-- Keep `SUPABASE_SERVICE_ROLE_KEY` only on a trusted backend.
-- Use Supabase Row Level Security for user-owned database tables.
+```txt
+npx tsx server.ts
+```
 
-## App Naming
+## Important Notes
 
-The AI coaching area is branded as **Gym-E**.
+- `VITE_SUPABASE_ANON_KEY` is public by design for browser apps.
+- Supabase Row Level Security policies in `supabase_schema.sql` ensure each user can only access their own data.
+- The AI backend requires CORS for `https://stayfitinlife.com` and `https://www.stayfitinlife.com`, already included in `server.ts`.

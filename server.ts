@@ -70,7 +70,7 @@ function aiRateLimit(req: Request, res: Response, next: NextFunction) {
   if (current.count >= RATE_LIMIT_MAX_REQUESTS) {
     return res.status(429).json({
       error: "RATE_LIMITED",
-      message: "Too many AI requests. Please try again shortly.",
+      message: "Too many AI requests. Please try again shortly."
     });
   }
 
@@ -103,32 +103,27 @@ let openai: OpenAI | null = null;
 function getOpenAI() {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
-    throw new Error("OPENAI_API_KEY is missing from environment. Add it to Render environment variables.");
+    throw new Error("OPENAI_API_KEY is missing from environment. Add it to .env.local or your deployment secrets.");
   }
 
   if (!openai) {
     openai = new OpenAI({ apiKey: key });
   }
-
   return openai;
 }
 
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
-    openai_configured: Boolean(process.env.OPENAI_API_KEY),
+    openai_configured: Boolean(process.env.OPENAI_API_KEY)
   });
 });
 
 app.post("/api/ai/chat", aiRateLimit, async (req: Request<unknown, unknown, AiChatRequestBody>, res) => {
   try {
     const validationError = validateAiChatBody(req.body);
-
     if (validationError) {
-      return res.status(400).json({
-        error: "INVALID_REQUEST",
-        message: validationError,
-      });
+      return res.status(400).json({ error: "INVALID_REQUEST", message: validationError });
     }
 
     const prompt = req.body.prompt!.trim();
@@ -141,44 +136,27 @@ app.post("/api/ai/chat", aiRateLimit, async (req: Request<unknown, unknown, AiCh
         {
           role: "system",
           content:
-            "You are STAYFITINLIFE's fitness assistant. Provide practical fitness and nutrition guidance. Do not diagnose, treat medical conditions, or recommend unsafe supplement/diet practices. For medical concerns, tell users to consult a qualified clinician.",
+            "You are STAYFITINLIFE's fitness assistant. Provide practical fitness and nutrition guidance. Do not diagnose, treat medical conditions, or recommend unsafe supplement/diet practices. For medical concerns, tell users to consult a qualified clinician."
         },
-        {
-          role: "user",
-          content: prompt,
-        },
+        { role: "user", content: prompt }
       ],
       response_format: jsonMode ? { type: "json_object" } : { type: "text" },
-      temperature: 0.6,
+      temperature: 0.6
     });
 
-    res.json({
-      content: response.choices[0]?.message?.content ?? "",
-    });
+    res.json({ content: response.choices[0]?.message?.content ?? "" });
   } catch (error: unknown) {
     const err = error as { message?: string; status?: number };
     console.error("OpenAI Server Error:", err.message || err);
 
     if (err.message?.includes("OPENAI_API_KEY")) {
-      res.status(401).json({
-        error: "API_KEY_MISSING",
-        message: err.message,
-      });
+      res.status(401).json({ error: "API_KEY_MISSING", message: err.message });
     } else if (err.status === 401) {
-      res.status(401).json({
-        error: "INVALID_API_KEY",
-        message: "The OpenAI API key is invalid or inactive.",
-      });
+      res.status(401).json({ error: "INVALID_API_KEY", message: "The OpenAI API key is invalid or inactive." });
     } else if (err.status === 429) {
-      res.status(429).json({
-        error: "QUOTA_EXCEEDED",
-        message: "OpenAI quota or rate limit exceeded.",
-      });
+      res.status(429).json({ error: "QUOTA_EXCEEDED", message: "OpenAI quota or rate limit exceeded." });
     } else {
-      res.status(500).json({
-        error: "INTERNAL_ERROR",
-        message: "Unable to complete the AI request right now.",
-      });
+      res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to complete the AI request right now." });
     }
   }
 });
@@ -189,13 +167,10 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
-
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-
     app.use(express.static(distPath));
-
     app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
