@@ -122,3 +122,6 @@ create index if not exists idx_meals_user_date on meals(user_id, date);
 create index if not exists idx_workouts_user_date on workouts(user_id, date);
 create index if not exists idx_weights_user_date on weights(user_id, date);
 create index if not exists idx_steps_user_date on steps(user_id, date);
+
+-- Force PostgREST/Supabase API schema cache refresh after migrations
+notify pgrst, 'reload schema';

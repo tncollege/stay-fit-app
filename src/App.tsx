@@ -20,7 +20,7 @@ import { AppData, Profile, Meal, Workout, WaterLog, Recovery } from './lib/types
 import { getTodayKey, round, idealWeightRange, kgToLb, lbToKg, cmToFtIn, ftInToCm, estimatedTargetFromFat, estimatedFatFromTarget } from './lib/utils';
 import { askAiCoach, analyzeGoal, generateDailyInsight } from './services/aiService';
 import { STORE_KEY, storageAdapter } from './services/storage';
-import { loadCloudData, saveProfile, saveWeight, saveSteps } from './services/cloudDataService';
+import { loadCloudData, saveProfile, saveWeight, saveSteps, syncLocalDataToCloud, hasMeaningfulLocalData, hasMeaningfulCloudData } from './services/cloudDataService';
 import { FOOD_DATABASE, EXERCISE_DATABASE } from './data/database';
 
 const DEFAULT_DATA: AppData = {
@@ -97,64 +97,64 @@ export default function App() {
 
     let cancelled = false;
 
-    async function loadFromCloud() {
+    async function loadFromCloudAndSyncLocalOnce() {
       setCloudLoading(true);
       try {
-        const cloud = await loadCloudData();
+        const localSnapshot = data;
+        let cloud = await loadCloudData();
+
         if (cancelled) return;
 
-        if (cloud) {
-          const cloudProfile = cloud.profile || {};
-          const hasCloudProfile = Boolean(
-            (cloudProfile as any).name ||
-            (cloudProfile as any).age ||
-            (cloudProfile as any).height ||
-            (cloudProfile as any).currentWeight
-          );
+        const cloudHasData = hasMeaningfulCloudData(cloud);
+        const localHasData = hasMeaningfulLocalData(localSnapshot);
+        const alreadySynced = localStorage.getItem('stayfitinlife_cloud_synced') === 'true';
 
-          // If this desktop/browser already has a local profile but Supabase has none,
-          // upload it automatically once. This fixes mobile asking onboarding again.
-          if (!hasCloudProfile) {
-            const localProfile = data.profile;
-            const hasLocalProfile = Boolean(
-              localProfile.name ||
-              localProfile.age ||
-              localProfile.height ||
-              localProfile.currentWeight
-            );
-
-            if (hasLocalProfile) {
-              try {
-                await saveProfile(localProfile);
-                console.log('Local profile uploaded to Supabase ✅');
-              } catch (err) {
-                console.error('Local profile autosync error ❌', err);
-              }
-            }
-          }
-
-          setData((prev: AppData) => ({
-            ...prev,
-            ...cloud,
-            profile: {
-              ...prev.profile,
-              ...cloudProfile,
-            },
-            introSeen: hasCloudProfile ? true : prev.introSeen,
-            meals: cloud.meals || prev.meals,
-            workouts: cloud.workouts || prev.workouts,
-            weights: cloud.weights || prev.weights,
-            steps: cloud.steps || prev.steps,
-          }));
+        // First desktop/device migration:
+        // If Supabase is empty but this browser has existing local data, upload it once,
+        // then reload from Supabase so all devices receive the same profile/meals/workouts.
+        if (!cloudHasData && localHasData && !alreadySynced) {
+          await syncLocalDataToCloud(localSnapshot);
+          console.log('Existing local data uploaded to Supabase ✅');
+          cloud = await loadCloudData();
         }
+
+        if (cancelled || !cloud) return;
+
+        const cloudProfile = cloud.profile || {};
+        const hasCloudProfile = Boolean(
+          (cloudProfile as any).name ||
+          (cloudProfile as any).age ||
+          (cloudProfile as any).height ||
+          (cloudProfile as any).currentWeight
+        );
+        const hasCloudMeals = Object.values(cloud.meals || {}).some((items: any) => Array.isArray(items) && items.length > 0);
+        const hasCloudWorkouts = Object.values(cloud.workouts || {}).some((items: any) => Array.isArray(items) && items.length > 0);
+        const hasCloudWeights = Array.isArray(cloud.weights) && cloud.weights.length > 0;
+        const hasCloudSteps = Object.keys(cloud.steps || {}).length > 0;
+
+        setData((prev: AppData) => ({
+          ...prev,
+          profile: hasCloudProfile
+            ? {
+                ...prev.profile,
+                ...cloudProfile,
+              }
+            : prev.profile,
+          introSeen: hasCloudProfile ? true : prev.introSeen,
+          meals: hasCloudMeals ? (cloud.meals as any) : prev.meals,
+          workouts: hasCloudWorkouts ? (cloud.workouts as any) : prev.workouts,
+          weights: hasCloudWeights ? (cloud.weights as any) : prev.weights,
+          steps: hasCloudSteps ? (cloud.steps as any) : prev.steps,
+          lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
+        }));
       } catch (err) {
-        console.error('Cloud data load error ❌', err);
+        console.error('Cloud sync/load error ❌', err);
       } finally {
         if (!cancelled) setCloudLoading(false);
       }
     }
 
-    loadFromCloud();
+    loadFromCloudAndSyncLocalOnce();
 
     return () => {
       cancelled = true;

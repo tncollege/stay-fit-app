@@ -125,19 +125,22 @@ export async function saveMeal(meal: any) {
   const userId = await getUserId();
   if (!userId) throw new Error('User not logged in');
 
-  const { error } = await supabase.from('meals').insert({
-    id: meal.id,
-    user_id: userId,
-    date: meal.date,
-    name: meal.name,
-    meal_type: meal.meal_type,
-    calories: meal.calories,
-    protein: meal.protein,
-    carbs: meal.carbs,
-    fats: meal.fats,
-    quantity: meal.quantity,
-    unit: meal.unit,
-  });
+  const { error } = await supabase.from('meals').upsert(
+    {
+      id: meal.id || crypto.randomUUID(),
+      user_id: userId,
+      date: meal.date,
+      name: meal.name,
+      meal_type: meal.meal_type,
+      calories: meal.calories,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fats: meal.fats,
+      quantity: meal.quantity,
+      unit: meal.unit,
+    },
+    { onConflict: 'id' }
+  );
 
   if (error) throw error;
 }
@@ -154,16 +157,20 @@ export async function saveWorkout(date: string, workout: any) {
   const userId = await getUserId();
   if (!userId) throw new Error('User not logged in');
 
-  const { error } = await supabase.from('workouts').insert({
-    user_id: userId,
-    date,
-    name: workout.name,
-    category: workout.category || null,
-    calories_burned: workout.caloriesBurned || 0,
-    duration: workout.duration || null,
-    muscles: workout.muscles || [],
-    sets: workout.sets || [],
-  });
+  const { error } = await supabase.from('workouts').upsert(
+    {
+      id: workout.id || crypto.randomUUID(),
+      user_id: userId,
+      date,
+      name: workout.name,
+      category: workout.category || null,
+      calories_burned: workout.caloriesBurned || 0,
+      duration: workout.duration || null,
+      muscles: workout.muscles || [],
+      sets: workout.sets || [],
+    },
+    { onConflict: 'id' }
+  );
 
   if (error) throw error;
 }
@@ -190,4 +197,69 @@ export async function saveSteps(date: string, steps: number) {
   );
 
   if (error) throw error;
+}
+
+
+export function hasMeaningfulLocalData(data: AppData) {
+  const profileComplete = Boolean(data.profile?.name || data.profile?.age || data.profile?.height || data.profile?.currentWeight);
+  const hasMeals = Object.values(data.meals || {}).some((items: any) => Array.isArray(items) && items.length > 0);
+  const hasWorkouts = Object.values(data.workouts || {}).some((items: any) => Array.isArray(items) && items.length > 0);
+  const hasWeights = Array.isArray(data.weights) && data.weights.length > 0;
+  const hasSteps = Object.keys(data.steps || {}).length > 0;
+
+  return profileComplete || hasMeals || hasWorkouts || hasWeights || hasSteps;
+}
+
+export function hasMeaningfulCloudData(data: Partial<AppData> | null) {
+  if (!data) return false;
+
+  const profileComplete = Boolean(data.profile?.name || data.profile?.age || data.profile?.height || data.profile?.currentWeight);
+  const hasMeals = Object.values(data.meals || {}).some((items: any) => Array.isArray(items) && items.length > 0);
+  const hasWorkouts = Object.values(data.workouts || {}).some((items: any) => Array.isArray(items) && items.length > 0);
+  const hasWeights = Array.isArray(data.weights) && data.weights.length > 0;
+  const hasSteps = Object.keys(data.steps || {}).length > 0;
+
+  return profileComplete || hasMeals || hasWorkouts || hasWeights || hasSteps;
+}
+
+export async function syncLocalDataToCloud(data: AppData) {
+  const userId = await getUserId();
+  if (!userId) throw new Error('User not logged in');
+
+  if (data.profile?.name || data.profile?.age || data.profile?.height || data.profile?.currentWeight) {
+    await saveProfile(data.profile);
+  }
+
+  for (const [date, meals] of Object.entries(data.meals || {})) {
+    for (const meal of meals as Meal[]) {
+      await saveMeal({
+        id: meal.id || crypto.randomUUID(),
+        date,
+        name: meal.name,
+        meal_type: meal.meal,
+        calories: meal.calories,
+        protein: meal.protein,
+        carbs: meal.carbs,
+        fats: meal.fats,
+        quantity: meal.qty,
+        unit: meal.unit,
+      });
+    }
+  }
+
+  for (const [date, workouts] of Object.entries(data.workouts || {})) {
+    for (const workout of workouts as Workout[]) {
+      await saveWorkout(date, workout);
+    }
+  }
+
+  for (const weight of data.weights || []) {
+    await saveWeight(weight.date, weight.weight);
+  }
+
+  for (const [date, steps] of Object.entries(data.steps || {})) {
+    await saveSteps(date, Number(steps));
+  }
+
+  localStorage.setItem('stayfitinlife_cloud_synced', 'true');
 }
