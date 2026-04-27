@@ -1122,6 +1122,43 @@ function ProfileView({ data, setData }: any) {
   const p = data.profile;
   const [temp, setTemp] = useState(p);
   const isMetric = temp.unitsSystem === 'metric';
+
+  const formatWeightInput = (weightKg: any, metric: boolean) => {
+    if (weightKg === undefined || weightKg === null || weightKg === '') return '';
+    const n = Number(weightKg);
+    if (Number.isNaN(n)) return '';
+    return metric ? String(n) : String(kgToLb(n));
+  };
+
+  const [currentWeightInput, setCurrentWeightInput] = useState(() => formatWeightInput(p.currentWeight, p.unitsSystem !== 'imperial'));
+  const [targetWeightInput, setTargetWeightInput] = useState(() => formatWeightInput(p.targetWeight, p.unitsSystem !== 'imperial'));
+
+  const handleUnitsChange = (u: 'metric' | 'imperial') => {
+    const nextIsMetric = u === 'metric';
+    setTemp((prev: any) => ({ ...prev, unitsSystem: u }));
+    setCurrentWeightInput(formatWeightInput(temp.currentWeight, nextIsMetric));
+    setTargetWeightInput(formatWeightInput(temp.targetWeight, nextIsMetric));
+  };
+
+  const handleWeightTextChange = (value: string, field: 'currentWeight' | 'targetWeight') => {
+    if (!/^\d*\.?\d*$/.test(value)) return;
+
+    if (field === 'currentWeight') setCurrentWeightInput(value);
+    if (field === 'targetWeight') setTargetWeightInput(value);
+
+    if (value === '') {
+      setTemp((prev: any) => ({ ...prev, [field]: undefined }));
+      return;
+    }
+
+    const numericValue = Number(value);
+    if (Number.isNaN(numericValue)) return;
+
+    setTemp((prev: any) => ({
+      ...prev,
+      [field]: isMetric ? numericValue : lbToKg(numericValue),
+    }));
+  };
   
   return (
     <div className="space-y-6">
@@ -1145,7 +1182,7 @@ function ProfileView({ data, setData }: any) {
                 {['metric', 'imperial'].map((u: any) => (
                   <button
                     key={u}
-                    onClick={() => setTemp({ ...temp, unitsSystem: u })}
+                    onClick={() => handleUnitsChange(u)}
                     className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${temp.unitsSystem === u ? 'bg-lime text-dark shadow-lg shadow-lime/20' : 'text-white/30 hover:text-white'}`}
                   >
                     {u}
@@ -1214,22 +1251,20 @@ function ProfileView({ data, setData }: any) {
                 </Field>
                 <Field label={`Current Weight (${isMetric ? 'kg' : 'lbs'})`}>
                   <input 
-                    type="number" 
-                    value={isMetric ? temp.currentWeight : kgToLb(temp.currentWeight)} 
-                    onChange={e => {
-                      const val = Number(e.target.value);
-                      setTemp({...temp, currentWeight: isMetric ? val : lbToKg(val)});
-                    }} 
+                    type="text"
+                    inputMode="decimal"
+                    value={currentWeightInput}
+                    onChange={e => handleWeightTextChange(e.target.value, 'currentWeight')}
+                    placeholder={isMetric ? '80.3' : '177'}
                   />
                 </Field>
                 <Field label={`Target Weight (${isMetric ? 'kg' : 'lbs'})`}>
                   <input 
-                    type="number" 
-                    value={isMetric ? temp.targetWeight : kgToLb(temp.targetWeight)} 
-                    onChange={e => {
-                      const val = Number(e.target.value);
-                      setTemp({...temp, targetWeight: isMetric ? val : lbToKg(val)});
-                    }} 
+                    type="text"
+                    inputMode="decimal"
+                    value={targetWeightInput}
+                    onChange={e => handleWeightTextChange(e.target.value, 'targetWeight')}
+                    placeholder={isMetric ? '72' : '158.7'}
                   />
                 </Field>
                 <Field label="Activity Plan">
