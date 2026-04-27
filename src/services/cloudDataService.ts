@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import type { AppData, Meal, Workout } from '../lib/types';
+import type { AppData, Meal, Workout, WaterLog } from '../lib/types';
 
 export async function getUserId() {
   const { data, error } = await supabase.auth.getUser();
@@ -48,19 +48,31 @@ function mapSteps(rows: any[]): Record<string, number> {
   }, {});
 }
 
+function groupWater(rows: any[]): Record<string, WaterLog[]> {
+  return rows.reduce((acc: Record<string, WaterLog[]>, row) => {
+    if (!acc[row.date]) acc[row.date] = [];
+    acc[row.date].push({
+      amount: Number(row.amount || 0),
+      time: row.logged_at ? new Date(row.logged_at).getTime() : Number(row.time || Date.now()),
+    });
+    return acc;
+  }, {});
+}
+
 export async function loadCloudData(): Promise<Partial<AppData> | null> {
   const userId = await getUserId();
   if (!userId) return null;
 
-  const [profileRes, mealsRes, workoutsRes, weightsRes, stepsRes] = await Promise.all([
+  const [profileRes, mealsRes, workoutsRes, weightsRes, stepsRes, waterRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
     supabase.from('meals').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
     supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
     supabase.from('weights').select('*').eq('user_id', userId).order('date', { ascending: true }),
     supabase.from('steps').select('*').eq('user_id', userId).order('date', { ascending: true }),
+    supabase.from('water').select('*').eq('user_id', userId).order('logged_at', { ascending: true }),
   ]);
 
-  const firstError = profileRes.error || mealsRes.error || workoutsRes.error || weightsRes.error || stepsRes.error;
+  const firstError = profileRes.error || mealsRes.error || workoutsRes.error || weightsRes.error || stepsRes.error || waterRes.error;
   if (firstError) throw firstError;
 
   const profileRow = profileRes.data;
@@ -90,6 +102,7 @@ export async function loadCloudData(): Promise<Partial<AppData> | null> {
     workouts: groupWorkouts(workoutsRes.data || []),
     weights: (weightsRes.data || []).map((w: any) => ({ date: w.date, weight: Number(w.weight || 0) })),
     steps: mapSteps(stepsRes.data || []),
+    water: groupWater(waterRes.data || []),
     lastSyncDate: new Date().toISOString(),
   };
 }
@@ -199,6 +212,24 @@ export async function saveSteps(date: string, steps: number) {
   if (error) throw error;
 }
 
+export async function saveWater(date: string, amount: number, time = Date.now()) {
+  const userId = await getUserId();
+  if (!userId) throw new Error('User not logged in');
+
+  const loggedAt = new Date(time).toISOString();
+  const { error } = await supabase.from('water').upsert(
+    {
+      user_id: userId,
+      date,
+      amount,
+      logged_at: loggedAt,
+    },
+    { onConflict: 'user_id,logged_at' }
+  );
+
+  if (error) throw error;
+}
+
 
 export function hasMeaningfulLocalData(data: AppData) {
   const profileComplete = Boolean(data.profile?.name || data.profile?.age || data.profile?.height || data.profile?.currentWeight);
@@ -206,8 +237,9 @@ export function hasMeaningfulLocalData(data: AppData) {
   const hasWorkouts = Object.values(data.workouts || {}).some((items: any) => Array.isArray(items) && items.length > 0);
   const hasWeights = Array.isArray(data.weights) && data.weights.length > 0;
   const hasSteps = Object.keys(data.steps || {}).length > 0;
+  const hasWater = Object.values(data.water || {}).some((items: any) => Array.isArray(items) && items.length > 0);
 
-  return profileComplete || hasMeals || hasWorkouts || hasWeights || hasSteps;
+  return profileComplete || hasMeals || hasWorkouts || hasWeights || hasSteps || hasWater;
 }
 
 export function hasMeaningfulCloudData(data: Partial<AppData> | null) {
@@ -218,8 +250,9 @@ export function hasMeaningfulCloudData(data: Partial<AppData> | null) {
   const hasWorkouts = Object.values(data.workouts || {}).some((items: any) => Array.isArray(items) && items.length > 0);
   const hasWeights = Array.isArray(data.weights) && data.weights.length > 0;
   const hasSteps = Object.keys(data.steps || {}).length > 0;
+  const hasWater = Object.values(data.water || {}).some((items: any) => Array.isArray(items) && items.length > 0);
 
-  return profileComplete || hasMeals || hasWorkouts || hasWeights || hasSteps;
+  return profileComplete || hasMeals || hasWorkouts || hasWeights || hasSteps || hasWater;
 }
 
 export async function syncLocalDataToCloud(data: AppData) {
@@ -261,5 +294,11 @@ export async function syncLocalDataToCloud(data: AppData) {
     await saveSteps(date, Number(steps));
   }
 
-  localStorage.setItem('stayfitinlife_cloud_synced', 'true');
+  for (const [date, logs] of Object.entries(data.water || {})) {
+    for (const log of logs as WaterLog[]) {
+      await saveWater(date, Number(log.amount || 0), Number(log.time || Date.now()));
+    }
+  }
+
+  localStorage.setItem('stayfitinlife_cloud_synced', 'v3');
 }

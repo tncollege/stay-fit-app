@@ -107,12 +107,12 @@ export default function App() {
 
         const cloudHasData = hasMeaningfulCloudData(cloud);
         const localHasData = hasMeaningfulLocalData(localSnapshot);
-        const alreadySynced = localStorage.getItem('stayfitinlife_cloud_synced') === 'true';
+        const alreadySynced = localStorage.getItem('stayfitinlife_cloud_synced') === 'v3';
 
         // First desktop/device migration:
-        // If Supabase is empty but this browser has existing local data, upload it once,
-        // then reload from Supabase so all devices receive the same profile/meals/workouts.
-        if (!cloudHasData && localHasData && !alreadySynced) {
+        // One-time desktop/device migration. We sync when this browser has local data
+        // and has not completed the current cloud sync version yet. Upserts prevent duplicates.
+        if (localHasData && !alreadySynced) {
           await syncLocalDataToCloud(localSnapshot);
           console.log('Existing local data uploaded to Supabase ✅');
           cloud = await loadCloudData();
@@ -131,6 +131,7 @@ export default function App() {
         const hasCloudWorkouts = Object.values(cloud.workouts || {}).some((items: any) => Array.isArray(items) && items.length > 0);
         const hasCloudWeights = Array.isArray(cloud.weights) && cloud.weights.length > 0;
         const hasCloudSteps = Object.keys(cloud.steps || {}).length > 0;
+        const hasCloudWater = Object.values(cloud.water || {}).some((items: any) => Array.isArray(items) && items.length > 0);
 
         setData((prev: AppData) => ({
           ...prev,
@@ -145,6 +146,7 @@ export default function App() {
           workouts: hasCloudWorkouts ? (cloud.workouts as any) : prev.workouts,
           weights: hasCloudWeights ? (cloud.weights as any) : prev.weights,
           steps: hasCloudSteps ? (cloud.steps as any) : prev.steps,
+          water: hasCloudWater ? (cloud.water as any) : prev.water,
           lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
         }));
       } catch (err) {

@@ -92,11 +92,23 @@ create table if not exists steps (
   unique(user_id, date)
 );
 
+
+create table if not exists water (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date text not null,
+  amount numeric default 0,
+  logged_at timestamptz not null default now(),
+  created_at timestamptz default now(),
+  unique(user_id, logged_at)
+);
+
 alter table profiles enable row level security;
 alter table meals enable row level security;
 alter table workouts enable row level security;
 alter table weights enable row level security;
 alter table steps enable row level security;
+alter table water enable row level security;
 
 drop policy if exists "profiles_owner_all" on profiles;
 create policy "profiles_owner_all" on profiles
@@ -118,10 +130,16 @@ drop policy if exists "steps_owner_all" on steps;
 create policy "steps_owner_all" on steps
 for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+
+drop policy if exists "water_owner_all" on water;
+create policy "water_owner_all" on water
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 create index if not exists idx_meals_user_date on meals(user_id, date);
 create index if not exists idx_workouts_user_date on workouts(user_id, date);
 create index if not exists idx_weights_user_date on weights(user_id, date);
 create index if not exists idx_steps_user_date on steps(user_id, date);
+create index if not exists idx_water_user_date on water(user_id, date);
 
 -- Force PostgREST/Supabase API schema cache refresh after migrations
 notify pgrst, 'reload schema';

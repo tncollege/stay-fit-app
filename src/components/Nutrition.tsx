@@ -8,7 +8,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { searchFoodNutrition } from '../services/aiService';
 import { Brain, Sparkles, PlusCircle } from 'lucide-react';
 import DateNavigator from './DateNavigator';
-import { deleteMealFromCloud, saveMeal } from '../services/cloudDataService';
+import { deleteMealFromCloud, saveMeal, saveWater } from '../services/cloudDataService';
 
 export default function Nutrition({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
   const [selectedMeal, setSelectedMeal] = useState('Breakfast');
@@ -34,6 +34,8 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   });
 
   const mealsArr = data.meals[viewDate] || [];
+  const waterArr = data.water[viewDate] || [];
+  const waterTotalMl = waterArr.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const personalFoodList = data.personalFood || [];
   const combinedFoodList = [...FOOD_DATABASE, ...personalFoodList];
 
@@ -293,6 +295,22 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                 </button>
               ))}
             </div>
+            <div className="mt-4 rounded-2xl border border-sky/10 bg-sky/5 p-4">
+              <div className="flex items-center justify-between">
+                <div className="label-small text-sky">Today's Water</div>
+                <div className="text-sm font-black text-sky">{round(waterTotalMl / 1000)}L</div>
+              </div>
+              {waterArr.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {waterArr.slice(-5).reverse().map((w, idx) => (
+                    <div key={`${w.time}-${idx}`} className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-white/40">
+                      <span>{new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-sky">+{w.amount}ml</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
               <button 
@@ -398,14 +416,22 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
               {[250, 500, 750].map(amt => (
                 <button 
                   key={amt}
-                  onClick={() => {
+                  onClick={async () => {
+                    const time = Date.now();
                     setData((prev: AppData) => ({
                       ...prev,
                       water: {
                         ...prev.water,
-                        [viewDate]: [...(prev.water[viewDate] || []), { amount: amt, time: Date.now() }]
+                        [viewDate]: [...(prev.water[viewDate] || []), { amount: amt, time }]
                       }
                     }));
+
+                    try {
+                      await saveWater(viewDate, amt, time);
+                      console.log('Water saved to Supabase ✅');
+                    } catch (err) {
+                      console.error('Water save error ❌', err);
+                    }
                   }}
                   className="flex-1 py-4 bg-sky/10 border border-sky/20 text-sky rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-sky/20 transition-all"
                 >
