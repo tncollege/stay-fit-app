@@ -24,6 +24,55 @@ function showNutritionMessage(message: string) {
   window.setTimeout(() => el.remove(), 2600);
 }
 
+function normalizeMicronutrients(food: any): Record<string, number> {
+  const raw = food?.micronutrients || food?.micros || food?.vitamins || {};
+  const normalized: Record<string, number> = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    const n = Number(value || 0);
+    if (!Number.isNaN(n) && n > 0) normalized[key] = n;
+  });
+
+  const name = String(food?.name || '').toLowerCase();
+
+  // Sensible fallback for common branded supplements when exact label data is missing.
+  if (Object.keys(normalized).length === 0) {
+    if (name.includes('magnesium')) normalized.magnesium = 200;
+    if (name.includes('vitamin d') || name.includes('d3')) normalized.vitaminD = 1000;
+    if (name.includes('vitamin c')) normalized.vitaminC = 500;
+    if (name.includes('b12') || name.includes('vitamin b12')) normalized.vitaminB12 = 2.4;
+    if (name.includes('zinc')) normalized.zinc = 10;
+    if (name.includes('iron')) normalized.iron = 18;
+    if (name.includes('calcium')) normalized.calcium = 500;
+    if (name.includes('omega')) normalized.omega3 = 1000;
+    if (name.includes('multivitamin')) {
+      normalized.vitaminC = normalized.vitaminC || 75;
+      normalized.vitaminD = normalized.vitaminD || 1000;
+      normalized.zinc = normalized.zinc || 10;
+      normalized.vitaminB12 = normalized.vitaminB12 || 2.4;
+    }
+  }
+
+  return normalized;
+}
+
+const MICRO_LABELS: Record<string, string> = {
+  vitaminD: 'Vitamin D',
+  vitaminC: 'Vitamin C',
+  vitaminB12: 'Vitamin B12',
+  calcium: 'Calcium',
+  iron: 'Iron',
+  magnesium: 'Magnesium',
+  zinc: 'Zinc',
+  omega3: 'Omega-3',
+};
+
+function scaleMicronutrients(micros: Record<string, number>, qty: number) {
+  return Object.fromEntries(
+    Object.entries(micros).map(([key, value]) => [key, Math.round(Number(value || 0) * qty * 10) / 10])
+  );
+}
+
+
 export default function Nutrition({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
   const [selectedMeal, setSelectedMeal] = useState('Breakfast');
   const [searchQuery, setSearchQuery] = useState('');
@@ -128,6 +177,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   };
 
   const currentMacros = calculateDetailedMacros();
+  const currentMicros = scaleMicronutrients(normalizeMicronutrients(selectedFood), qtyValue || 1);
 
   const handleAddMeal = async () => {
     if (!selectedFood) return;
@@ -148,7 +198,8 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
       fats: finalMacros.f,
       qty: saveQtyValue,
       unit: unitLabel || 'portion',
-      loggedAt: new Date().toISOString()
+      loggedAt: new Date().toISOString(),
+      micronutrients: currentMicros
     };
 
     const foodWithCategory = { ...selectedFood, main: 'User Food' };
@@ -171,6 +222,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         quantity: saveQtyValue,
         unit: unitLabel || 'portion',
         loggedAt: newMeal.loggedAt,
+        micronutrients: currentMicros,
       });
 
       setData((prev: AppData) => ({
@@ -179,6 +231,14 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
           ...prev.meals,
           [viewDate]: [...(prev.meals[viewDate] || []), newMeal]
         },
+        micronutrients: Object.keys(currentMicros).length > 0 ? {
+          ...(prev.micronutrients || {}),
+          [viewDate]: [...((prev.micronutrients || {})[viewDate] || []), { name: mealName, micronutrients: currentMicros }]
+        } : (prev.micronutrients || {}),
+        supplements: Object.keys(currentMicros).length > 0 ? {
+          ...(prev.supplements || {}),
+          [viewDate]: [...((prev.supplements || {})[viewDate] || []), { name: mealName, micronutrients: currentMicros }]
+        } : (prev.supplements || {}),
         personalFood: isAlreadyInDb
           ? (prev.personalFood || [])
           : [...(prev.personalFood || []), foodWithCategory]
@@ -557,12 +617,26 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                <h3 className="text-3xl font-black mb-1">{selectedFood.name}</h3>
                <div className="label-small opacity-30 mb-10">{selectedFood.portion}</div>
                
-               <div className="grid grid-cols-4 gap-3 mb-10">
+               <div className="grid grid-cols-4 gap-3 mb-6">
                   <NutriSmall label="Kcal" val={currentMacros.cal} color="text-pink" />
                   <NutriSmall label="Prot" val={currentMacros.p} color="text-lime" />
                   <NutriSmall label="Carb" val={currentMacros.c} color="text-sky" />
                   <NutriSmall label="Fat" val={currentMacros.f} />
                </div>
+
+               {Object.keys(currentMicros).length > 0 && (
+                 <div className="mb-8 p-4 rounded-2xl bg-lime/5 border border-lime/20">
+                   <div className="label-small text-lime mb-3">Micronutrients / Supplement Actives</div>
+                   <div className="grid grid-cols-2 gap-2">
+                     {Object.entries(currentMicros).map(([key, value]) => (
+                       <div key={key} className="flex justify-between items-center bg-white/[0.03] border border-border rounded-xl px-3 py-2">
+                         <span className="text-[9px] font-black uppercase tracking-widest text-white/45">{MICRO_LABELS[key] || key}</span>
+                         <span className="text-xs font-black text-lime">{value}</span>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               )}
 
                <div className="space-y-6">
                   <div className="space-y-3">

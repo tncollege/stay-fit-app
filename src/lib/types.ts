@@ -30,6 +30,9 @@ export interface Meal {
   unit: string;
   meal: string;
   loggedAt?: string;
+  micronutrients?: Record<string, number>;
+  micros?: Record<string, number>;
+  vitamins?: Record<string, number>;
 }
 
 export interface Workout {
@@ -105,5 +108,7 @@ export interface AppData {
   lastWorkoutPlanDate?: string;
   lastMealPlanDate?: string;
   lastSupplementPlanDate?: string;
+  micronutrients?: Record<string, any[]>;
+  supplements?: Record<string, any[]>;
   lastSyncDate?: string | null;
 }

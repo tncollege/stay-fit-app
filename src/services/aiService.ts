@@ -123,11 +123,22 @@ Return valid JSON:
   "protein": number,
   "carbs": number,
   "fats": number,
-  "unit": "bowl/piece/100g/etc",
+  "unit": "bowl/piece/capsule/100g/etc",
   "portion": "serving size description",
   "main": "Category",
-  "sub": "Subcategory"
-}`;
+  "sub": "Subcategory",
+  "micronutrients": {
+    "vitaminD": number,
+    "vitaminC": number,
+    "vitaminB12": number,
+    "calcium": number,
+    "iron": number,
+    "magnesium": number,
+    "zinc": number,
+    "omega3": number
+  }
+}
+For branded supplements, estimate the most likely micronutrient label values per serving. Use 0 for unknown fields.`;
 
   try {
     const result = await callServerAi(prompt, true);

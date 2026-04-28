@@ -273,3 +273,7 @@ drop policy if exists "Users can manage supplements" on public.supplements;
 create policy "Users can manage supplements" on public.supplements for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 notify pgrst, 'reload schema';
+
+
+alter table public.meals add column if not exists micronutrients jsonb default '{}'::jsonb;
+notify pgrst, 'reload schema';

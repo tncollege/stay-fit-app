@@ -23,6 +23,7 @@ import { STORE_KEY, storageAdapter } from './services/storage';
 import { loadCloudData, saveProfile, saveWeight, saveSteps, saveWaterTotal, deleteWeightFromCloud, deleteStepsFromCloud, syncLocalDataToCloud, hasMeaningfulLocalData, hasMeaningfulCloudData } from './services/cloudDataService';
 import { FOOD_DATABASE, EXERCISE_DATABASE } from './data/database';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import MicronutrientsPanel from './components/MicronutrientsPanel';
 
 function showAppMessage(message: string) {
   if (typeof document === 'undefined') return;
@@ -54,6 +55,8 @@ const DEFAULT_DATA: AppData = {
   workouts: {},
   weights: [],
   steps: {},
+  micronutrients: {},
+  supplements: {},
   lastSyncDate: null,
   recovery: {},
   apiQueryCount: 0,
@@ -245,7 +248,6 @@ export default function App() {
   if (checkingAuth || (loggedIn && cloudLoading)) {
     return (
       <div className="min-h-screen bg-dark text-lime flex items-center justify-center font-black">
-      <PWAInstallPrompt isLoggedIn={true} />
         Loading...
       </div>
     );
@@ -283,6 +285,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-dark text-white">
+      <PWAInstallPrompt isLoggedIn={loggedIn} />
       {/* Desktop Sidebar (Slim) */}
       <aside className="fixed left-0 top-0 bottom-0 w-20 border-r border-border bg-[#111] hidden lg:flex flex-col items-center py-6 z-50">
         <div className="w-10 h-10 rounded-xl bg-lime text-dark flex items-center justify-center font-black mb-10 shadow-lg shadow-lime/20">
@@ -657,6 +660,8 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
             <MacroColumn label="Fats" current={consumed.fats} target={dynamicTargets.fats} color="pink" />
           </div>
         </div>
+
+        <MicronutrientsPanel data={data} viewDate={viewDate} />
       </div>
 
       {/* Side Routine Panel */}

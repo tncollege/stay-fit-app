@@ -211,7 +211,7 @@ export default function Auth({ onAuth }: { onAuth: () => void }) {
               Back to login
             </button>
           )}
-          <span>Powered by Supabase</span>
+          <span>Created by Himanshu Kaushik</span>
         </div>
       </div>
     </div>
