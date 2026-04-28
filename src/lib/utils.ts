@@ -16,11 +16,21 @@ export const ftInToCm = (ft: number, inch: number) =>
 export const lToOz = (l: number) => round((Number(l) || 0) * 33.814, 1);
 export const ozToL = (oz: number) => round((Number(oz) || 0) / 33.814, 2);
 
-export const getTodayKey = () => new Date().toISOString().slice(0, 10);
+// Local timezone date key — fixes dashboard showing yesterday after midnight.
+export const getDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+};
+
+export const getTodayKey = () => getDateKey(new Date());
+
 export const getYesterdayKey = () => {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return getDateKey(d);
 };
 
 export function idealWeightRange(heightCm: number) {
