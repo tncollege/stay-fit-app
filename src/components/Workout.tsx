@@ -896,11 +896,22 @@ function WeeklyPlanSection(props: any) {
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
-  const yesterdayName = yesterdayWorkouts?.[0]?.name;
-  const yesterdayNote = yesterdayName && todayPlan?.planName
-    ? 'Yesterday you logged ' + yesterdayName + '. Today is planned as ' + todayPlan.planName + '. Update the weekly plan if your split changed.'
-    : '';
+  const yesterdayNames = (yesterdayWorkouts || [])
+  .map((w: any) => w.name)
+  .filter(Boolean);
 
+const yesterdaySummary =
+  yesterdayNames.length > 1
+    ? yesterdayNames.join(' + ')
+    : yesterdayNames[0];
+
+const yesterdayNote = yesterdaySummary && todayPlan?.planName
+  ? 'Yesterday you logged ' +
+    yesterdaySummary +
+    '. Today is planned as ' +
+    todayPlan.planName +
+    '. Update the weekly plan if your split changed.'
+  : '';
   return (
     <div className="rounded-[2rem] border border-lime/20 bg-lime/[0.03] p-5 space-y-5">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
