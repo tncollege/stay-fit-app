@@ -1,5 +1,5 @@
-const CACHE_NAME = 'stayfitinlife-pwa-v1';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+const CACHE_NAME = 'stayfitinlife-pwa-v2';
+const APP_SHELL = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -27,11 +27,5 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(caches.match(req).then((cached) => cached || fetch(req).then((res) => {
-    if (res && res.status === 200 && url.origin === location.origin) {
-      const copy = res.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-    }
-    return res;
-  })));
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
