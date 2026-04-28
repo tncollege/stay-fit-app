@@ -22,6 +22,24 @@ import { searchExerciseInfo, calculateRecoveryTime } from '../services/aiService
 import DateNavigator from './DateNavigator';
 import { saveWorkout, deleteWorkoutFromCloud, loadWorkoutPlans, saveWorkoutPlan, deleteWorkoutPlan, saveCustomExercise } from '../services/cloudDataService';
 
+
+function showWorkoutMessage(message: string, tone: 'success' | 'error' = 'success') {
+  if (typeof document === 'undefined') return;
+  const existing = document.getElementById('stayfitinlife-workout-toast');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.id = 'stayfitinlife-workout-toast';
+  el.textContent = message;
+  el.className = `fixed bottom-24 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-2xl text-dark text-xs font-black uppercase tracking-widest shadow-2xl border max-w-[90vw] text-center ${
+    tone === 'error'
+      ? 'bg-pink border-pink/40 shadow-pink/20'
+      : 'bg-lime border-lime/30 shadow-lime/20'
+  }`;
+  document.body.appendChild(el);
+  window.setTimeout(() => el.remove(), 2600);
+}
+
 const CATEGORY_IMAGES: Record<string, string> = {
   Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
   Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
@@ -71,6 +89,7 @@ export default function WorkoutView({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [aiSearching, setAiSearching] = useState(false);
+  const [savingWorkout, setSavingWorkout] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
 
   const [editingSetId, setEditingSetId] = useState<number | string | null>(null);
@@ -374,19 +393,28 @@ export default function WorkoutView({
   };
 
   const addWorkoutToStateAndCloud = async (newWorkout: Workout) => {
-    setData((prev: AppData) => ({
-      ...prev,
-      workouts: {
-        ...prev.workouts,
-        [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout],
-      },
-    }));
+    setSavingWorkout(true);
 
     try {
       await saveWorkout(viewDate, newWorkout);
-      console.log('Workout saved to Supabase ✅');
+
+      setData((prev: AppData) => ({
+        ...prev,
+        workouts: {
+          ...prev.workouts,
+          [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout],
+        },
+      }));
+
+      showWorkoutMessage('Workout saved successfully');
+      window.setTimeout(() => {
+        document.getElementById('workout-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
     } catch (err) {
       console.error('Supabase workout save error ❌', err);
+      showWorkoutMessage('Unable to save workout. Please try again.', 'error');
+    } finally {
+      setSavingWorkout(false);
     }
   };
 
@@ -655,6 +683,7 @@ export default function WorkoutView({
                   workoutName={workoutName}
                   setWorkoutName={setWorkoutName}
                   handleFinishWorkout={handleFinishWorkout}
+                  savingWorkout={savingWorkout}
                 />
               ) : activeTab === 'cardio' ? (
                 <CardioPanel
@@ -708,7 +737,7 @@ export default function WorkoutView({
               reason={recoveryReason}
             />
 
-            <div className="stat-card">
+            <div id="workout-history" className="stat-card">
               <h3 className="label-small mb-6 text-pink">Temporal Record</h3>
 
               {workoutsArr.length === 0 ? (
@@ -1041,6 +1070,7 @@ function StrengthPanel(props: any) {
     workoutName,
     setWorkoutName,
     handleFinishWorkout,
+    savingWorkout,
   } = props;
 
   return (
@@ -1254,9 +1284,10 @@ function StrengthPanel(props: any) {
               <div className="label-small text-lime">Active Bio-Calibration Session</div>
               <button
                 onClick={handleFinishWorkout}
-                className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all"
+                disabled={savingWorkout}
+                className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
               >
-                Submit Session
+                {savingWorkout ? 'Saving...' : 'Submit Session'}
               </button>
             </div>
           </div>
