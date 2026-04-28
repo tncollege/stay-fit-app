@@ -23,19 +23,6 @@ import { STORE_KEY, storageAdapter } from './services/storage';
 import { loadCloudData, saveProfile, saveWeight, saveSteps, saveWaterTotal, deleteWeightFromCloud, deleteStepsFromCloud, syncLocalDataToCloud, hasMeaningfulLocalData, hasMeaningfulCloudData } from './services/cloudDataService';
 import { FOOD_DATABASE, EXERCISE_DATABASE } from './data/database';
 
-function showAppMessage(message: string) {
-  if (typeof document === 'undefined') return;
-  const existing = document.getElementById('stayfitinlife-toast');
-  if (existing) existing.remove();
-
-  const el = document.createElement('div');
-  el.id = 'stayfitinlife-toast';
-  el.textContent = message;
-  el.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-2xl bg-lime text-dark text-xs font-black uppercase tracking-widest shadow-2xl shadow-lime/20 border border-lime/30 max-w-[90vw] text-center';
-  document.body.appendChild(el);
-  window.setTimeout(() => el.remove(), 2800);
-}
-
 const DEFAULT_DATA: AppData = {
   profile: {
     unitsSystem: 'metric',
@@ -434,6 +421,159 @@ function NavBtn({ icon, active, onClick }: any) {
   );
 }
 
+
+
+type MicroItem = {
+  key: string;
+  label: string;
+  current: number;
+  target: number;
+  unit: string;
+  color: 'lime' | 'sky' | 'pink';
+};
+
+const MICRO_TARGETS: Record<string, { label: string; target: number; unit: string; color: 'lime' | 'sky' | 'pink' }> = {
+  vitaminD: { label: 'Vitamin D', target: 1000, unit: 'IU', color: 'lime' },
+  vitaminC: { label: 'Vitamin C', target: 90, unit: 'mg', color: 'sky' },
+  magnesium: { label: 'Magnesium', target: 400, unit: 'mg', color: 'lime' },
+  calcium: { label: 'Calcium', target: 1000, unit: 'mg', color: 'sky' },
+  iron: { label: 'Iron', target: 18, unit: 'mg', color: 'pink' },
+  zinc: { label: 'Zinc', target: 11, unit: 'mg', color: 'lime' },
+  omega3: { label: 'Omega-3', target: 1000, unit: 'mg', color: 'sky' },
+};
+
+function estimateMicronutrients(meals: Meal[], supplementPlan?: string): MicroItem[] {
+  const totals: Record<string, number> = {
+    vitaminD: 0,
+    vitaminC: 0,
+    magnesium: 0,
+    calcium: 0,
+    iron: 0,
+    zinc: 0,
+    omega3: 0,
+  };
+
+  const add = (key: string, value: number) => {
+    totals[key] = (totals[key] || 0) + value;
+  };
+
+  meals.forEach((meal: any) => {
+    const name = String(meal.name || '').toLowerCase();
+    const qty = Math.max(1, Number(meal.qty) || 1);
+
+    if (/orange|lemon|amla|kiwi|strawberry|berries|guava|capsicum|bell pepper|broccoli/.test(name)) add('vitaminC', 45 * qty);
+    if (/milk|curd|yogurt|paneer|cheese|calcium/.test(name)) add('calcium', 250 * qty);
+    if (/spinach|palak|lentil|dal|beans|chickpea|rajma|tofu|red meat|mutton/.test(name)) add('iron', 3 * qty);
+    if (/almond|cashew|peanut|seed|pumpkin|chia|magnesium|spinach|dark chocolate/.test(name)) add('magnesium', 75 * qty);
+    if (/egg|chicken|fish|seafood|oyster|zinc|pumpkin seed/.test(name)) add('zinc', 3 * qty);
+    if (/salmon|sardine|tuna|fish|omega|flax|chia|walnut/.test(name)) add('omega3', 700 * qty);
+    if (/vitamin d|d3|sunlight|salmon|egg|fortified/.test(name)) add('vitaminD', 300 * qty);
+  });
+
+  const supp = String(supplementPlan || '').toLowerCase();
+  if (/vitamin d|\bd3\b/.test(supp)) add('vitaminD', 1000);
+  if (/vitamin c/.test(supp)) add('vitaminC', 90);
+  if (/magnesium/.test(supp)) add('magnesium', 200);
+  if (/calcium/.test(supp)) add('calcium', 500);
+  if (/iron/.test(supp)) add('iron', 18);
+  if (/zinc/.test(supp)) add('zinc', 11);
+  if (/omega|fish oil/.test(supp)) add('omega3', 1000);
+
+  return Object.entries(MICRO_TARGETS).map(([key, meta]) => ({
+    key,
+    label: meta.label,
+    current: Math.round(totals[key] || 0),
+    target: meta.target,
+    unit: meta.unit,
+    color: meta.color,
+  }));
+}
+
+function buildGymEInsight({ profile, consumed, dynamicTargets, workoutArr, waterTotal, stepsToday, stepGoal, micronutrients }: any) {
+  const notes: string[] = [];
+  const calorieGap = Math.round(dynamicTargets.calories - consumed.calories);
+  const proteinPct = dynamicTargets.protein ? Math.round((consumed.protein / dynamicTargets.protein) * 100) : 0;
+  const waterPct = dynamicTargets.water ? Math.round((waterTotal / dynamicTargets.water) * 100) : 0;
+  const stepPct = stepGoal ? Math.round((stepsToday / stepGoal) * 100) : 0;
+  const lowMicros = micronutrients.filter((m: MicroItem) => m.current > 0 && (m.current / m.target) < 0.6).slice(0, 2);
+  const missingMicros = micronutrients.filter((m: MicroItem) => m.current === 0).slice(0, 2);
+
+  if (calorieGap > 250) notes.push(`You are ${calorieGap} kcal under today's dynamic target.`);
+  else if (calorieGap < -200) notes.push(`You are ${Math.abs(calorieGap)} kcal above target; keep the next meal lighter.`);
+  else notes.push('Calories are close to target.');
+
+  if (proteinPct < 75) notes.push('Protein is low; add a lean protein source in the next meal.');
+  else if (proteinPct >= 95) notes.push('Protein target is nearly covered.');
+
+  if (stepPct < 50) notes.push(`Movement is at ${stepPct}%; add a 15–20 minute walk.`);
+  else if (stepPct >= 90) notes.push('Movement cycle is on track.');
+
+  if (waterPct < 60) notes.push('Hydration is behind; take water now and recheck later.');
+  else notes.push('Hydration is tracking well.');
+
+  if (workoutArr.length > 0) notes.push(`${workoutArr.length} training session${workoutArr.length > 1 ? 's' : ''} logged today.`);
+  else notes.push(`No workout logged yet; follow your ${profile.goal || 'fitness'} protocol.`);
+
+  if (lowMicros.length > 0) notes.push(`${lowMicros.map((m: MicroItem) => m.label).join(' and ')} look low today.`);
+  else if (missingMicros.length > 0) notes.push(`No ${missingMicros.map((m: MicroItem) => m.label).join('/')} source logged yet.`);
+  else notes.push('Key micronutrients look covered.');
+
+  return notes.join(' ');
+}
+
+function MicronutrientPanel({ items }: { items: MicroItem[] }) {
+  const activeItems = items.filter(item => item.current > 0);
+  const displayItems = activeItems.length > 0 ? activeItems : items.slice(0, 4);
+  const lowItems = items.filter(item => item.current > 0 && item.current / item.target < 0.6);
+
+  return (
+    <div className="stat-card">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <div className="label-small text-sky">Micronutrient Balance</div>
+          <p className="text-[10px] text-white/30 mt-1">From logged foods and supplement protocol</p>
+        </div>
+        <div className={`text-[10px] font-black uppercase tracking-widest ${lowItems.length ? 'text-pink' : 'text-lime'}`}>
+          {activeItems.length ? (lowItems.length ? `${lowItems.length} Low` : 'Covered') : 'No Data'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {displayItems.map(item => {
+          const pct = Math.min(100, Math.round((item.current / item.target) * 100));
+          const isEmpty = item.current === 0;
+          return (
+            <div key={item.key} className="p-4 rounded-2xl bg-white/[0.02] border border-border">
+              <div className="flex justify-between items-end mb-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-white/40 font-black">{item.label}</div>
+                  <div className={`text-lg font-black ${isEmpty ? 'text-white/20' : `text-${item.color}`}`}>
+                    {round(item.current)}<span className="text-[10px] opacity-40 ml-1">/ {item.target}{item.unit}</span>
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold opacity-40">{pct}%</div>
+              </div>
+              <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${pct}%` }}
+                  className={`h-full ${isEmpty ? 'bg-white/10' : `bg-${item.color}`}`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {activeItems.length === 0 && (
+        <p className="mt-5 text-[11px] text-white/30 leading-relaxed">
+          Log foods or supplements to unlock vitamin and mineral coverage. Gym-E will surface low areas here.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // --- Dashboard ---
 function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { data: AppData, setData: any, setActiveTab: (t: string) => void, viewDate: string, setViewDate: (d: string) => void }) {
   const today = viewDate;
@@ -495,6 +635,17 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
   const netCalories = consumed.calories - burned;
   const remaining = targets.calories - netCalories;
   const progressPct = Math.min(100, Math.round((consumed.calories / dynamicTargets.calories) * 100));
+  const micronutrientItems = useMemo(() => estimateMicronutrients(mealsArr, data.cachedSupplementPlan), [mealsArr, data.cachedSupplementPlan]);
+  const smartInsight = useMemo(() => buildGymEInsight({
+    profile,
+    consumed,
+    dynamicTargets,
+    workoutArr,
+    waterTotal,
+    stepsToday,
+    stepGoal,
+    micronutrients: micronutrientItems,
+  }), [profile, consumed, dynamicTargets, workoutArr, waterTotal, stepsToday, stepGoal, micronutrientItems]);
 
   const fetchInsight = async () => {
     setInsightLoading(true);
@@ -638,7 +789,7 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
             <>
               <h2 className="text-2xl font-bold mb-2 tracking-tight">Personalized Performance Insight</h2>
               <p className="text-sm opacity-70 leading-relaxed max-w-xl italic">
-                "{aiInsight || "Calibrating systems... Log more data to unlock deeper bio-insights."}"
+                “{aiInsight || smartInsight || 'Calibrating systems... Log more data to unlock deeper bio-insights.'}”
               </p>
             </>
           )}
@@ -655,6 +806,8 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
             <MacroColumn label="Fats" current={consumed.fats} target={dynamicTargets.fats} color="pink" />
           </div>
         </div>
+
+        <MicronutrientPanel items={micronutrientItems} />
       </div>
 
       {/* Side Routine Panel */}
@@ -1417,7 +1570,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       window.setTimeout(() => window.location.reload(), 250);
     } catch (err) {
       console.error('Weight save error ❌', err);
-      showAppMessage('Unable to save weight. Please try again.');
+      alert('Weight save failed. Please check Supabase weights unique constraint and try again.');
     }
   };
 
@@ -1443,10 +1596,10 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       }));
 
       setLogSteps(String(steps));
-      showAppMessage("Steps updated. Dashboard refreshed.");
+      alert("Step matrix updated. Dashboard Movement Cycle refreshed.");
     } catch (err) {
       console.error("Steps save error ❌", err);
-      showAppMessage("Unable to save steps. Please try again.");
+      alert("Steps save failed. Please run the latest supabase_schema.sql and try again.");
     }
   };
 
@@ -1461,7 +1614,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       setData((prev: AppData) => ({ ...prev, weights: (cloud?.weights as any) || [] }));
     } catch (err) {
       console.error('Weight delete error ❌', err);
-      showAppMessage('Unable to delete weight entry. Please try again.');
+      alert('Weight delete failed. Check console.');
     }
   };
 
@@ -1477,12 +1630,12 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       setData((prev: AppData) => ({ ...prev, steps: (cloud?.steps as any) || {} }));
     } catch (err) {
       console.error('Steps delete error ❌', err);
-      showAppMessage('Unable to delete steps entry. Please try again.');
+      alert('Steps delete failed. Check console.');
     }
   };
 
   const handleCloudSync = async (source: string) => {
-    showAppMessage('Direct sync is not available yet. Please use manual entry or CSV import.');
+    alert(`${source} direct sync needs a native HealthKit/Health Connect/WHOOP integration. Use manual entry or CSV import for now.`);
   };
 
   const isMetric = data.profile.unitsSystem === 'metric';

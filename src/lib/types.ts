@@ -61,17 +61,6 @@ export interface ExerciseInfo {
   caloriesPerMinuteStandard?: number;
 }
 
-export interface WorkoutPlanExercise {
-  name: string;
-  bodyPart: string;
-}
-
-export interface WorkoutPlanDay {
-  dayOfWeek: string;
-  planName: string;
-  exercises: WorkoutPlanExercise[];
-}
-
 export interface WaterLog {
   amount: number;
   time: number;
@@ -96,7 +85,6 @@ export interface AppData {
   recovery: Record<string, Recovery>;
   personalFood?: Meal[];
   personalExercises?: ExerciseInfo[];
-  workoutPlans?: Record<string, WorkoutPlanDay>;
   cachedWorkoutPlan?: string;
   cachedMealPlan?: string;
   cachedSupplementPlan?: string;

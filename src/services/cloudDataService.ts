@@ -65,17 +65,16 @@ export async function loadCloudData(): Promise<Partial<AppData> | null> {
   const userId = await getUserId();
   if (!userId) return null;
 
-  const [profileRes, mealsRes, workoutsRes, weightsRes, stepsRes, waterRes, customExercisesRes] = await Promise.all([
+  const [profileRes, mealsRes, workoutsRes, weightsRes, stepsRes, waterRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
     supabase.from('meals').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
     supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
     supabase.from('weights').select('*').eq('user_id', userId).order('date', { ascending: true }),
     supabase.from('steps').select('*').eq('user_id', userId).order('date', { ascending: true }),
     supabase.from('water').select('*').eq('user_id', userId).order('logged_at', { ascending: true }),
-    supabase.from('custom_exercises').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
   ]);
 
-  const firstError = profileRes.error || mealsRes.error || workoutsRes.error || weightsRes.error || stepsRes.error || waterRes.error || customExercisesRes.error;
+  const firstError = profileRes.error || mealsRes.error || workoutsRes.error || weightsRes.error || stepsRes.error || waterRes.error;
   if (firstError) throw firstError;
 
   const profileRow = profileRes.data;
@@ -106,7 +105,6 @@ export async function loadCloudData(): Promise<Partial<AppData> | null> {
     weights: (weightsRes.data || []).map((w: any) => ({ date: w.date, weight: Number(w.weight || 0) })),
     steps: mapSteps(stepsRes.data || []),
     water: groupWater(waterRes.data || []),
-    personalExercises: (customExercisesRes.data || []).map((e: any) => ({ name: e.name, bodyPart: e.body_part, met: e.met ?? undefined, caloriesPerMinuteStandard: e.calories_per_minute_standard ?? undefined })),
     lastSyncDate: new Date().toISOString(),
   };
 }
@@ -355,76 +353,4 @@ export async function syncLocalDataToCloud(data: AppData) {
   }
 
   localStorage.setItem('stayfitinlife_cloud_synced', 'v3');
-}
-
-export async function loadWorkoutPlans() {
-  const userId = await getUserId();
-  if (!userId) return {};
-
-  const { data, error } = await supabase
-    .from('workout_plans')
-    .select('*')
-    .eq('user_id', userId);
-
-  if (error) throw error;
-
-  return (data || []).reduce((acc: Record<string, any>, row: any) => {
-    acc[row.day_of_week] = {
-      dayOfWeek: row.day_of_week,
-      planName: row.plan_name || '',
-      exercises: Array.isArray(row.exercises) ? row.exercises : [],
-    };
-    return acc;
-  }, {});
-}
-
-export async function saveWorkoutPlan(plan: { dayOfWeek: string; planName: string; exercises: any[] }) {
-  const userId = await getUserId();
-  if (!userId) throw new Error('User not logged in');
-
-  const { error } = await supabase.from('workout_plans').upsert(
-    {
-      user_id: userId,
-      day_of_week: plan.dayOfWeek,
-      plan_name: plan.planName,
-      exercises: plan.exercises || [],
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,day_of_week' }
-  );
-
-  if (error) throw error;
-}
-
-export async function deleteWorkoutPlan(dayOfWeek: string) {
-  const userId = await getUserId();
-  if (!userId) throw new Error('User not logged in');
-
-  const { error } = await supabase
-    .from('workout_plans')
-    .delete()
-    .eq('user_id', userId)
-    .eq('day_of_week', dayOfWeek);
-
-  if (error) throw error;
-}
-
-
-export async function saveCustomExercise(exercise: any) {
-  const userId = await getUserId();
-  if (!userId) throw new Error('User not logged in');
-
-  const { error } = await supabase.from('custom_exercises').upsert(
-    {
-      user_id: userId,
-      name: exercise.name,
-      body_part: exercise.bodyPart || 'Chest',
-      source: exercise.source || 'manual',
-      met: exercise.met ?? null,
-      calories_per_minute_standard: exercise.caloriesPerMinuteStandard ?? null,
-    },
-    { onConflict: 'user_id,name' }
-  );
-
-  if (error) throw error;
 }

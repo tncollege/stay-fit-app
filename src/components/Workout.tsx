@@ -20,25 +20,7 @@ import { AppData, Workout } from '../lib/types';
 import { EXERCISE_DATABASE } from '../data/database';
 import { searchExerciseInfo, calculateRecoveryTime } from '../services/aiService';
 import DateNavigator from './DateNavigator';
-import { saveWorkout, deleteWorkoutFromCloud, loadWorkoutPlans, saveWorkoutPlan, deleteWorkoutPlan, saveCustomExercise } from '../services/cloudDataService';
-
-
-function showWorkoutMessage(message: string, tone: 'success' | 'error' = 'success') {
-  if (typeof document === 'undefined') return;
-  const existing = document.getElementById('stayfitinlife-workout-toast');
-  if (existing) existing.remove();
-
-  const el = document.createElement('div');
-  el.id = 'stayfitinlife-workout-toast';
-  el.textContent = message;
-  el.className = `fixed bottom-24 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-2xl text-dark text-xs font-black uppercase tracking-widest shadow-2xl border max-w-[90vw] text-center ${
-    tone === 'error'
-      ? 'bg-pink border-pink/40 shadow-pink/20'
-      : 'bg-lime border-lime/30 shadow-lime/20'
-  }`;
-  document.body.appendChild(el);
-  window.setTimeout(() => el.remove(), 2600);
-}
+import { saveWorkout, deleteWorkoutFromCloud } from '../services/cloudDataService';
 
 const CATEGORY_IMAGES: Record<string, string> = {
   Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
@@ -89,7 +71,6 @@ export default function WorkoutView({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [aiSearching, setAiSearching] = useState(false);
-  const [savingWorkout, setSavingWorkout] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
 
   const [editingSetId, setEditingSetId] = useState<number | string | null>(null);
@@ -121,22 +102,6 @@ export default function WorkoutView({
 
   const workoutsArr = data.workouts[viewDate] || [];
   const personalExercises = data.personalExercises || [];
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const todayName = dayNames[new Date(viewDate + 'T00:00:00').getDay()];
-  const yesterdayKey = (() => {
-    const d = new Date(viewDate + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  })();
-  const yesterdayWorkouts = data.workouts[yesterdayKey] || [];
-  const [workoutPlans, setWorkoutPlans] = useState<Record<string, any>>({});
-  const [planEditorOpen, setPlanEditorOpen] = useState(false);
-  const [editingPlanDay, setEditingPlanDay] = useState(todayName);
-  const [planNameInput, setPlanNameInput] = useState('');
-  const [planExerciseInput, setPlanExerciseInput] = useState('');
-  const [planBodyPartInput, setPlanBodyPartInput] = useState('Chest');
-  const currentPlanDraft = workoutPlans[editingPlanDay] || { dayOfWeek: editingPlanDay, planName: '', exercises: [] };
-  const todayPlan = workoutPlans[todayName];
 
   const getDynamicCardioMetric = (value: string) => {
     const ex = value.toLowerCase();
@@ -180,106 +145,6 @@ export default function WorkoutView({
       .map((e) => e.name);
 
     return Array.from(new Set([...fromBase, ...fromPersonal].map((e) => toExerciseTitle(String(e)))));
-  };
-
-  useEffect(() => {
-    loadWorkoutPlans()
-      .then((plans) => setWorkoutPlans(plans || {}))
-      .catch((err) => console.error('Workout plan load failed', err));
-  }, []);
-
-  useEffect(() => {
-    const selected = workoutPlans[editingPlanDay];
-    setPlanNameInput(selected?.planName || '');
-    setPlanExerciseInput('');
-    setPlanBodyPartInput('Chest');
-  }, [editingPlanDay, workoutPlans]);
-
-  const suggestSets = () => {
-    const goal = data.profile?.goal;
-    const level = data.profile?.mode;
-    if (goal === 'Muscle Gain') return level === 'Advanced' ? '4–5' : '3–4';
-    if (goal === 'Fat Loss') return '2–3';
-    if (goal === 'Body Recomposition') return '3–4';
-    if (goal === 'Maintenance') return '2–3';
-    return '3–4';
-  };
-
-  const suggestedRepsForExercise = (name: string, bodyPart?: string) => {
-    const lower = name.toLowerCase();
-    if (bodyPart === 'Core') return '12–20';
-    if (lower.includes('curl') || lower.includes('raise') || lower.includes('extension') || lower.includes('fly')) return '10–15';
-    if (lower.includes('deadlift') || lower.includes('squat') || lower.includes('bench') || lower.includes('press') || lower.includes('row')) return '6–10';
-    return '8–10';
-  };
-
-  const addExerciseToPlan = () => {
-    const name = toExerciseTitle(planExerciseInput);
-    if (!name) return;
-    const existing = currentPlanDraft.exercises || [];
-    if (existing.some((ex: any) => ex.name.toLowerCase() === name.toLowerCase())) return;
-    setWorkoutPlans((prev) => ({
-      ...prev,
-      [editingPlanDay]: {
-        dayOfWeek: editingPlanDay,
-        planName: planNameInput || prev[editingPlanDay]?.planName || '',
-        exercises: [...existing, { name, bodyPart: planBodyPartInput }],
-      },
-    }));
-    setPlanExerciseInput('');
-  };
-
-  const removeExerciseFromPlan = (index: number) => {
-    const existing = currentPlanDraft.exercises || [];
-    setWorkoutPlans((prev) => ({
-      ...prev,
-      [editingPlanDay]: {
-        dayOfWeek: editingPlanDay,
-        planName: planNameInput || prev[editingPlanDay]?.planName || '',
-        exercises: existing.filter((_: any, i: number) => i !== index),
-      },
-    }));
-  };
-
-  const saveCurrentPlan = async () => {
-    const plan = {
-      dayOfWeek: editingPlanDay,
-      planName: planNameInput.trim() || (editingPlanDay + ' Workout'),
-      exercises: currentPlanDraft.exercises || [],
-    };
-    setWorkoutPlans((prev) => ({ ...prev, [editingPlanDay]: plan }));
-    try {
-      await saveWorkoutPlan(plan);
-      console.log('Workout plan saved ✅');
-    } catch (err) {
-      console.error('Workout plan save failed', err);
-      alert('Unable to save workout plan. Please try again.');
-    }
-  };
-
-  const clearCurrentPlan = async () => {
-    setWorkoutPlans((prev) => {
-      const next = { ...prev };
-      delete next[editingPlanDay];
-      return next;
-    });
-    setPlanNameInput('');
-    try {
-      await deleteWorkoutPlan(editingPlanDay);
-    } catch (err) {
-      console.error('Workout plan delete failed', err);
-    }
-  };
-
-  const startTodayPlan = () => {
-    if (!todayPlan) return;
-    setWorkoutName(todayPlan.planName || (todayName + ' Workout'));
-    const first = todayPlan.exercises?.[0];
-    if (first) {
-      setSelectedMuscle(first.bodyPart || 'Chest');
-      setExercise(first.name);
-    }
-    setActiveTab('strength');
   };
 
   const handleAddSet = async () => {
@@ -333,7 +198,6 @@ export default function WorkoutView({
             ...prev,
             personalExercises: [...(prev.personalExercises || []), fixedResult],
           }));
-          saveCustomExercise({ ...fixedResult, bodyPart: fixedResult.bodyPart || 'Chest', source: 'ai' }).catch((err) => console.error('Custom exercise save failed', err));
         }
 
         if (fixedResult.bodyPart === 'Cardio') {
@@ -377,7 +241,6 @@ export default function WorkoutView({
       ...prev,
       personalExercises: [...(prev.personalExercises || []), fixedCustom],
     }));
-    saveCustomExercise({ ...fixedCustom, source: 'manual' }).catch((err) => console.error('Custom exercise save failed', err));
 
     if (fixedCustom.bodyPart === 'Cardio') {
       setCardioExercise(fixedCustom.name);
@@ -393,28 +256,19 @@ export default function WorkoutView({
   };
 
   const addWorkoutToStateAndCloud = async (newWorkout: Workout) => {
-    setSavingWorkout(true);
+    setData((prev: AppData) => ({
+      ...prev,
+      workouts: {
+        ...prev.workouts,
+        [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout],
+      },
+    }));
 
     try {
       await saveWorkout(viewDate, newWorkout);
-
-      setData((prev: AppData) => ({
-        ...prev,
-        workouts: {
-          ...prev.workouts,
-          [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout],
-        },
-      }));
-
-      showWorkoutMessage('Workout saved successfully');
-      window.setTimeout(() => {
-        document.getElementById('workout-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 200);
+      console.log('Workout saved to Supabase ✅');
     } catch (err) {
       console.error('Supabase workout save error ❌', err);
-      showWorkoutMessage('Unable to save workout. Please try again.', 'error');
-    } finally {
-      setSavingWorkout(false);
     }
   };
 
@@ -600,32 +454,6 @@ export default function WorkoutView({
                 ))}
               </div>
 
-              <WeeklyPlanSection
-                dayNames={dayNames}
-                todayName={todayName}
-                todayPlan={todayPlan}
-                planEditorOpen={planEditorOpen}
-                setPlanEditorOpen={setPlanEditorOpen}
-                editingPlanDay={editingPlanDay}
-                setEditingPlanDay={setEditingPlanDay}
-                planNameInput={planNameInput}
-                setPlanNameInput={setPlanNameInput}
-                currentPlanDraft={currentPlanDraft}
-                planExerciseInput={planExerciseInput}
-                setPlanExerciseInput={setPlanExerciseInput}
-                planBodyPartInput={planBodyPartInput}
-                setPlanBodyPartInput={setPlanBodyPartInput}
-                getExerciseOptions={getExerciseOptions}
-                addExerciseToPlan={addExerciseToPlan}
-                removeExerciseFromPlan={removeExerciseFromPlan}
-                saveCurrentPlan={saveCurrentPlan}
-                clearCurrentPlan={clearCurrentPlan}
-                startTodayPlan={startTodayPlan}
-                suggestSets={suggestSets}
-                suggestedRepsForExercise={suggestedRepsForExercise}
-                yesterdayWorkouts={yesterdayWorkouts}
-              />
-
               <div className="relative">
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-white/20" size={18} />
                 <input
@@ -683,7 +511,6 @@ export default function WorkoutView({
                   workoutName={workoutName}
                   setWorkoutName={setWorkoutName}
                   handleFinishWorkout={handleFinishWorkout}
-                  savingWorkout={savingWorkout}
                 />
               ) : activeTab === 'cardio' ? (
                 <CardioPanel
@@ -737,7 +564,7 @@ export default function WorkoutView({
               reason={recoveryReason}
             />
 
-            <div id="workout-history" className="stat-card">
+            <div className="stat-card">
               <h3 className="label-small mb-6 text-pink">Temporal Record</h3>
 
               {workoutsArr.length === 0 ? (
@@ -854,194 +681,6 @@ export default function WorkoutView({
   );
 }
 
-
-function WeeklyPlanSection(props: any) {
-  const {
-    dayNames,
-    todayName,
-    todayPlan,
-    planEditorOpen,
-    setPlanEditorOpen,
-    editingPlanDay,
-    setEditingPlanDay,
-    planNameInput,
-    setPlanNameInput,
-    currentPlanDraft,
-    planExerciseInput,
-    setPlanExerciseInput,
-    planBodyPartInput,
-    setPlanBodyPartInput,
-    getExerciseOptions,
-    addExerciseToPlan,
-    removeExerciseFromPlan,
-    saveCurrentPlan,
-    clearCurrentPlan,
-    startTodayPlan,
-    suggestSets,
-    suggestedRepsForExercise,
-    yesterdayWorkouts,
-  } = props;
-
-  const plannedExercises = todayPlan?.exercises || [];
-  const yesterdayName = yesterdayWorkouts?.[0]?.name;
-  const yesterdayNote = yesterdayName && todayPlan?.planName
-    ? 'Yesterday you logged ' + yesterdayName + '. Today is planned as ' + todayPlan.planName + '. Update the weekly plan if your split changed.'
-    : '';
-
-  return (
-    <div className="rounded-[2rem] border border-lime/20 bg-lime/[0.03] p-5 space-y-5">
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-        <div>
-          <div className="label-small text-lime mb-2">Today’s Workout Plan • {todayName}</div>
-          <h3 className="text-2xl font-black tracking-tight">{todayPlan?.planName || 'No plan set for today'}</h3>
-          <p className="text-[11px] text-white/40 mt-1">
-            Select workout name and exercise names only. Suggested sets/reps are generated from your goal.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {todayPlan && (
-            <button
-              onClick={startTodayPlan}
-              className="px-5 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all"
-            >
-              Start Today’s Plan
-            </button>
-          )}
-          <button
-            onClick={() => setPlanEditorOpen(!planEditorOpen)}
-            className="px-5 py-3 rounded-xl bg-white/[0.04] border border-border text-white/60 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
-          >
-            {planEditorOpen ? 'Close Plan' : 'Edit Plan'}
-          </button>
-        </div>
-      </div>
-
-      {yesterdayNote && (
-        <div className="rounded-2xl border border-sky/20 bg-sky/5 p-4 text-[11px] text-sky font-bold leading-relaxed">
-          {yesterdayNote}
-        </div>
-      )}
-
-      {plannedExercises.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {plannedExercises.map((ex: any, idx: number) => (
-            <div key={idx} className="rounded-2xl border border-border bg-white/[0.02] p-4">
-              <div className="text-sm font-black">{ex.name}</div>
-              <div className="label-small text-lime mt-1">{ex.bodyPart}</div>
-              <div className="text-[10px] text-white/40 mt-3 font-bold uppercase tracking-widest">
-                Suggested: {suggestSets()} sets • {suggestedRepsForExercise(ex.name, ex.bodyPart)} reps
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {planEditorOpen && (
-        <div className="rounded-[2rem] border border-border bg-black/20 p-5 space-y-5">
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {dayNames.map((day: string) => (
-              <button
-                key={day}
-                onClick={() => setEditingPlanDay(day)}
-                className={
-                  'shrink-0 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ' +
-                  (editingPlanDay === day
-                    ? 'bg-lime border-lime text-dark shadow-lg shadow-lime/20'
-                    : 'bg-white/[0.03] border-border text-white/40 hover:text-white')
-                }
-              >
-                {day.slice(0, 3)}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="label-small text-muted ml-1">Workout Name</div>
-              <input
-                value={planNameInput}
-                onChange={(e) => setPlanNameInput(e.target.value)}
-                className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-                placeholder="Push, Pull, Upper Body..."
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="label-small text-muted ml-1">Body Part</div>
-              <select
-                value={planBodyPartInput}
-                onChange={(e) => {
-                  setPlanBodyPartInput(e.target.value);
-                  setPlanExerciseInput('');
-                }}
-                className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-              >
-                {['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'].map((m) => (
-                  <option key={m} value={m} className="bg-dark">{m}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="label-small text-muted ml-1">Add Exercise</div>
-            <input
-              value={planExerciseInput}
-              onChange={(e) => setPlanExerciseInput(e.target.value)}
-              className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-              placeholder="Type or choose exercise..."
-            />
-            <div className="max-h-40 overflow-y-auto space-y-2 custom-scrollbar">
-              {getExerciseOptions(planBodyPartInput)
-                .filter((e: string) => !planExerciseInput || e.toLowerCase().includes(planExerciseInput.toLowerCase()))
-                .slice(0, 10)
-                .map((e: string) => (
-                  <button
-                    key={e}
-                    onClick={() => setPlanExerciseInput(e)}
-                    className="w-full text-left px-4 py-3 rounded-xl border bg-white/[0.03] border-border text-white/60 hover:text-white hover:border-lime/30 text-xs font-bold transition-all"
-                  >
-                    {e}
-                  </button>
-                ))}
-            </div>
-            <button
-              onClick={addExerciseToPlan}
-              className="w-full py-3 rounded-xl bg-sky/15 text-sky border border-sky/30 text-[10px] font-black uppercase tracking-widest hover:bg-sky hover:text-dark transition-all"
-            >
-              Add Exercise To {editingPlanDay}
-            </button>
-          </div>
-
-          {(currentPlanDraft.exercises || []).length > 0 && (
-            <div className="space-y-2">
-              {(currentPlanDraft.exercises || []).map((ex: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center rounded-xl border border-border bg-white/[0.02] px-4 py-3">
-                  <div>
-                    <div className="text-sm font-bold">{ex.name}</div>
-                    <div className="label-small text-lime">{ex.bodyPart}</div>
-                  </div>
-                  <button onClick={() => removeExerciseFromPlan(idx)} className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={saveCurrentPlan} className="py-4 rounded-2xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20">
-              Save Weekly Plan
-            </button>
-            <button onClick={clearCurrentPlan} className="py-4 rounded-2xl bg-pink/15 text-pink border border-pink/30 text-[10px] font-black uppercase tracking-widest">
-              Clear Day
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function StrengthPanel(props: any) {
   const {
     selectedMuscle,
@@ -1070,7 +709,6 @@ function StrengthPanel(props: any) {
     workoutName,
     setWorkoutName,
     handleFinishWorkout,
-    savingWorkout,
   } = props;
 
   return (
@@ -1284,10 +922,9 @@ function StrengthPanel(props: any) {
               <div className="label-small text-lime">Active Bio-Calibration Session</div>
               <button
                 onClick={handleFinishWorkout}
-                disabled={savingWorkout}
-                className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
+                className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all"
               >
-                {savingWorkout ? 'Saving...' : 'Submit Session'}
+                Submit Session
               </button>
             </div>
           </div>

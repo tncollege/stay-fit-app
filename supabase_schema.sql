@@ -124,7 +124,42 @@ begin
 end $$;
 
 alter table water drop constraint if exists water_user_id_logged_at_key;
+alter table water drop constraint if exists water_user_id_date_key;
+drop index if exists water_user_id_date_key;
 alter table water add constraint water_user_id_date_key unique(user_id, date);
+
+
+create table if not exists supplements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date text not null,
+  name text not null,
+  amount numeric default 0,
+  unit text,
+  nutrients jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+create table if not exists workout_plans (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  day_of_week text not null,
+  plan_name text not null,
+  exercises jsonb default '[]'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(user_id, day_of_week)
+);
+
+create table if not exists custom_exercises (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  body_part text,
+  source text default 'manual',
+  created_at timestamptz default now(),
+  unique(user_id, name)
+);
 
 alter table profiles enable row level security;
 alter table meals enable row level security;
@@ -132,6 +167,9 @@ alter table workouts enable row level security;
 alter table weights enable row level security;
 alter table steps enable row level security;
 alter table water enable row level security;
+alter table supplements enable row level security;
+alter table workout_plans enable row level security;
+alter table custom_exercises enable row level security;
 
 drop policy if exists "profiles_owner_all" on profiles;
 create policy "profiles_owner_all" on profiles
@@ -158,11 +196,26 @@ drop policy if exists "water_owner_all" on water;
 create policy "water_owner_all" on water
 for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+
+drop policy if exists "supplements_owner_all" on supplements;
+create policy "supplements_owner_all" on supplements
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "workout_plans_owner_all" on workout_plans;
+create policy "workout_plans_owner_all" on workout_plans
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "custom_exercises_owner_all" on custom_exercises;
+create policy "custom_exercises_owner_all" on custom_exercises
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 create index if not exists idx_meals_user_date on meals(user_id, date);
 create index if not exists idx_workouts_user_date on workouts(user_id, date);
 create index if not exists idx_weights_user_date on weights(user_id, date);
 create index if not exists idx_steps_user_date on steps(user_id, date);
 create index if not exists idx_water_user_date on water(user_id, date);
+create index if not exists idx_supplements_user_date on supplements(user_id, date);
+create index if not exists idx_workout_plans_user_day on workout_plans(user_id, day_of_week);
 
 -- Force PostgREST/Supabase API schema cache refresh after migrations
 notify pgrst, 'reload schema';
@@ -191,49 +244,4 @@ alter table public.steps add constraint steps_user_date_unique unique (user_id, 
 alter table public.weights drop constraint if exists weights_user_date_unique;
 alter table public.weights add constraint weights_user_date_unique unique (user_id, date);
 
-notify pgrst, 'reload schema';
-
--- Weekly workout plan with exercise names/body parts only. App suggests sets/reps dynamically.
-create table if not exists public.workout_plans (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  day_of_week text not null,
-  plan_name text not null,
-  exercises jsonb not null default '[]'::jsonb,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  unique(user_id, day_of_week)
-);
-
-alter table public.workout_plans enable row level security;
-
-drop policy if exists "workout_plans_owner_all" on public.workout_plans;
-create policy "workout_plans_owner_all" on public.workout_plans
-for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
-create index if not exists idx_workout_plans_user_day on public.workout_plans(user_id, day_of_week);
-
-notify pgrst, 'reload schema';
-
--- User custom/AI exercises. AI search results become available like normal exercises.
-create table if not exists public.custom_exercises (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  name text not null,
-  body_part text not null default 'Chest',
-  source text default 'manual',
-  met numeric,
-  calories_per_minute_standard numeric,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  unique(user_id, name)
-);
-
-alter table public.custom_exercises enable row level security;
-
-drop policy if exists "custom_exercises_owner_all" on public.custom_exercises;
-create policy "custom_exercises_owner_all" on public.custom_exercises
-for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
-create index if not exists idx_custom_exercises_user_body on public.custom_exercises(user_id, body_part);
 notify pgrst, 'reload schema';
