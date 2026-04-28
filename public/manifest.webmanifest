@@ -1,7 +1,6 @@
 {
   "name": "STAYFITINLIFE",
   "short_name": "STAYFIT",
-  "description": "AI-powered fitness, nutrition, workout planning and performance dashboard.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

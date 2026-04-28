@@ -237,3 +237,39 @@ for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create index if not exists idx_custom_exercises_user_body on public.custom_exercises(user_id, body_part);
 notify pgrst, 'reload schema';
+
+
+-- Final production additions
+alter table public.profiles add column if not exists welcome_email_sent boolean default false;
+
+create table if not exists public.feedback (
+  id uuid primary key default gen_random_uuid(),
+  email text,
+  message text not null,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+alter table public.feedback enable row level security;
+drop policy if exists "Anyone can submit feedback" on public.feedback;
+create policy "Anyone can submit feedback" on public.feedback for insert with check (true);
+
+create table if not exists public.supplements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  date date not null,
+  name text not null,
+  brand text,
+  calories numeric default 0,
+  protein numeric default 0,
+  carbs numeric default 0,
+  fats numeric default 0,
+  micronutrients jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+alter table public.supplements enable row level security;
+drop policy if exists "Users can manage supplements" on public.supplements;
+create policy "Users can manage supplements" on public.supplements for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+notify pgrst, 'reload schema';
