@@ -130,3 +130,20 @@ npx tsx server.ts
 This build loads profile/onboarding data from Supabase before showing onboarding, so users who complete onboarding on desktop should not be asked again on mobile after logging in.
 
 If you already ran an older schema, run the latest `supabase_schema.sql` again. It safely adds missing profile columns with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+
+## Weekly Workout Plan Feature
+
+This build adds a Supabase-backed weekly workout plan system:
+
+- Set a workout name for each weekday, for example Push, Pull, Legs, Upper Body.
+- Add exercise names and body parts to each day.
+- The app suggests sets based on profile goal and experience level.
+- The app suggests rep ranges dynamically instead of storing reps in the plan.
+- Today’s workout plan appears in the Workout screen.
+- AI-searched exercises are saved into the user’s custom exercise library and become selectable in plans.
+
+After deploying, run `supabase_schema.sql` in Supabase SQL Editor to create/update:
+
+- `workout_plans`
+- `custom_exercises`
+

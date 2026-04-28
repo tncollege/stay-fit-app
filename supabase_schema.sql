@@ -192,3 +192,48 @@ alter table public.weights drop constraint if exists weights_user_date_unique;
 alter table public.weights add constraint weights_user_date_unique unique (user_id, date);
 
 notify pgrst, 'reload schema';
+
+-- Weekly workout plan with exercise names/body parts only. App suggests sets/reps dynamically.
+create table if not exists public.workout_plans (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  day_of_week text not null,
+  plan_name text not null,
+  exercises jsonb not null default '[]'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(user_id, day_of_week)
+);
+
+alter table public.workout_plans enable row level security;
+
+drop policy if exists "workout_plans_owner_all" on public.workout_plans;
+create policy "workout_plans_owner_all" on public.workout_plans
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create index if not exists idx_workout_plans_user_day on public.workout_plans(user_id, day_of_week);
+
+notify pgrst, 'reload schema';
+
+-- User custom/AI exercises. AI search results become available like normal exercises.
+create table if not exists public.custom_exercises (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  body_part text not null default 'Chest',
+  source text default 'manual',
+  met numeric,
+  calories_per_minute_standard numeric,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(user_id, name)
+);
+
+alter table public.custom_exercises enable row level security;
+
+drop policy if exists "custom_exercises_owner_all" on public.custom_exercises;
+create policy "custom_exercises_owner_all" on public.custom_exercises
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create index if not exists idx_custom_exercises_user_body on public.custom_exercises(user_id, body_part);
+notify pgrst, 'reload schema';
