@@ -22,6 +22,7 @@ import { askAiCoach, analyzeGoal, generateDailyInsight } from './services/aiServ
 import { STORE_KEY, storageAdapter } from './services/storage';
 import { loadCloudData, saveProfile, saveWeight, saveSteps, saveWaterTotal, deleteWeightFromCloud, deleteStepsFromCloud, syncLocalDataToCloud, hasMeaningfulLocalData, hasMeaningfulCloudData } from './services/cloudDataService';
 import { FOOD_DATABASE, EXERCISE_DATABASE } from './data/database';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 const DEFAULT_DATA: AppData = {
   profile: {
@@ -231,6 +232,7 @@ export default function App() {
   if (checkingAuth || (loggedIn && cloudLoading)) {
     return (
       <div className="min-h-screen bg-dark text-lime flex items-center justify-center font-black">
+      <PWAInstallPrompt isLoggedIn={true} />
         Loading...
       </div>
     );
