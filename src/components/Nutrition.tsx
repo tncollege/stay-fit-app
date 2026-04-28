@@ -10,6 +10,20 @@ import { Brain, Sparkles, PlusCircle } from 'lucide-react';
 import DateNavigator from './DateNavigator';
 import { deleteMealFromCloud, deleteWaterFromCloud, saveMeal, saveWaterTotal } from '../services/cloudDataService';
 
+
+function showNutritionMessage(message: string) {
+  if (typeof document === 'undefined') return;
+  const existing = document.getElementById('stayfitinlife-nutrition-toast');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.id = 'stayfitinlife-nutrition-toast';
+  el.textContent = message;
+  el.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-2xl bg-lime text-dark text-xs font-black uppercase tracking-widest shadow-2xl shadow-lime/20 border border-lime/30 max-w-[90vw] text-center';
+  document.body.appendChild(el);
+  window.setTimeout(() => el.remove(), 2600);
+}
+
 export default function Nutrition({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
   const [selectedMeal, setSelectedMeal] = useState('Breakfast');
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,7 +31,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   const [selectedMain, setSelectedMain] = useState<string | null>(null);
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
   const [selectedFood, setSelectedFood] = useState<any>(null);
-  const [qty, setQty] = useState(1);
+  const [qtyInput, setQtyInput] = useState('1');
   const [wholeEggs, setWholeEggs] = useState(2);
   const [eggWhites, setEggWhites] = useState(0);
   const [servingType, setServingType] = useState<string>('standard');
@@ -46,6 +60,8 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
 
   const isEggDish = selectedFood?.main === 'Eggs';
   const isGlobalEgg = isEggDish && selectedFood?.sub === 'Global';
+  const qtyValue = qtyInput.trim() === '' ? 0 : Number(qtyInput) || 0;
+  const saveQtyValue = qtyInput.trim() === '' ? 1 : Number(qtyInput) || 1;
 
   // Conversions for non-standard serving sizes
   const CONVERSIONS: Record<string, number> = {
@@ -87,27 +103,27 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         const baseF = selectedFood.fats - (2 * EGG_DATA.whole.f);
 
         return {
-          cal: Math.round(((baseCal * weightMult) + (wholeEggs * EGG_DATA.whole.cal) + (eggWhites * EGG_DATA.white.cal)) * qty),
-          p: round(((baseP * weightMult) + (wholeEggs * EGG_DATA.whole.p) + (eggWhites * EGG_DATA.white.p)) * qty),
-          c: round(((baseC * weightMult) + (wholeEggs * EGG_DATA.whole.c) + (eggWhites * EGG_DATA.white.c)) * qty),
-          f: round(((baseF * weightMult) + (wholeEggs * EGG_DATA.whole.f) + (eggWhites * EGG_DATA.white.f)) * qty)
+          cal: Math.round(((baseCal * weightMult) + (wholeEggs * EGG_DATA.whole.cal) + (eggWhites * EGG_DATA.white.cal)) * qtyValue),
+          p: round(((baseP * weightMult) + (wholeEggs * EGG_DATA.whole.p) + (eggWhites * EGG_DATA.white.p)) * qtyValue),
+          c: round(((baseC * weightMult) + (wholeEggs * EGG_DATA.whole.c) + (eggWhites * EGG_DATA.white.c)) * qtyValue),
+          f: round(((baseF * weightMult) + (wholeEggs * EGG_DATA.whole.f) + (eggWhites * EGG_DATA.white.f)) * qtyValue)
         };
       } else {
         // Basic Egg Items (just use counts)
         return {
-          cal: Math.round(((wholeEggs * EGG_DATA.whole.cal) + (eggWhites * EGG_DATA.white.cal)) * qty),
-          p: round(((wholeEggs * EGG_DATA.whole.p) + (eggWhites * EGG_DATA.white.p)) * qty),
-          c: round(((wholeEggs * EGG_DATA.whole.c) + (eggWhites * EGG_DATA.white.c)) * qty),
-          f: round(((wholeEggs * EGG_DATA.whole.f) + (eggWhites * EGG_DATA.white.f)) * qty)
+          cal: Math.round(((wholeEggs * EGG_DATA.whole.cal) + (eggWhites * EGG_DATA.white.cal)) * qtyValue),
+          p: round(((wholeEggs * EGG_DATA.whole.p) + (eggWhites * EGG_DATA.white.p)) * qtyValue),
+          c: round(((wholeEggs * EGG_DATA.whole.c) + (eggWhites * EGG_DATA.white.c)) * qtyValue),
+          f: round(((wholeEggs * EGG_DATA.whole.f) + (eggWhites * EGG_DATA.white.f)) * qtyValue)
         };
       }
     }
     
     return {
-      cal: Math.round(selectedFood.calories * weightMult * qty),
-      p: round(selectedFood.protein * weightMult * qty),
-      c: round(selectedFood.carbs * weightMult * qty),
-      f: round(selectedFood.fats * weightMult * qty)
+      cal: Math.round(selectedFood.calories * weightMult * qtyValue),
+      p: round(selectedFood.protein * weightMult * qtyValue),
+      c: round(selectedFood.carbs * weightMult * qtyValue),
+      f: round(selectedFood.fats * weightMult * qtyValue)
     };
   };
 
@@ -115,10 +131,10 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
 
   const handleAddMeal = async () => {
     if (!selectedFood) return;
+
     const finalMacros = calculateDetailedMacros();
-    
     const unitLabel = servingType === 'standard' ? selectedFood.unit : servingType;
-    const mealName = isEggDish 
+    const mealName = isEggDish
       ? selectedFood.name + " (" + wholeEggs + "W, " + eggWhites + "E)"
       : selectedFood.name;
 
@@ -130,27 +146,19 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
       protein: finalMacros.p,
       carbs: finalMacros.c,
       fats: finalMacros.f,
-      qty: qty,
-      unit: unitLabel,
+      qty: saveQtyValue,
+      unit: unitLabel || 'portion',
       loggedAt: new Date().toISOString()
     };
-    
-    setData((prev: AppData) => {
-      const foodWithCategory = { ...selectedFood, main: 'User Food' };
-      const isAlreadyInDb = combinedFoodList.some(f => f.name.toLowerCase() === selectedFood.name.toLowerCase());
-      const nextPersonalFood = isAlreadyInDb ? (prev.personalFood || []) : [...(prev.personalFood || []), foodWithCategory];
-      
-      return {
-        ...prev,
-        meals: {
-          ...prev.meals,
-          [viewDate]: [...(prev.meals[viewDate] || []), newMeal]
-        },
-        personalFood: nextPersonalFood
-      };
-    });
+
+    const foodWithCategory = { ...selectedFood, main: 'User Food' };
+    const isAlreadyInDb = combinedFoodList.some(
+      f => f.name.toLowerCase() === selectedFood.name.toLowerCase()
+    );
 
     try {
+      // Save to Supabase first. This prevents the auto cloud refresh from
+      // replacing the local meal list with old cloud data and making the meal disappear.
       await saveMeal({
         id: newMeal.id,
         date: viewDate,
@@ -160,19 +168,32 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         protein: Number(finalMacros.p) || 0,
         carbs: Number(finalMacros.c) || 0,
         fats: Number(finalMacros.f) || 0,
-        quantity: Number(qty) || 1,
+        quantity: saveQtyValue,
         unit: unitLabel || 'portion',
         loggedAt: newMeal.loggedAt,
       });
-      console.log('Meal saved to Supabase ✅');
+
+      setData((prev: AppData) => ({
+        ...prev,
+        meals: {
+          ...prev.meals,
+          [viewDate]: [...(prev.meals[viewDate] || []), newMeal]
+        },
+        personalFood: isAlreadyInDb
+          ? (prev.personalFood || [])
+          : [...(prev.personalFood || []), foodWithCategory]
+      }));
+
+      showNutritionMessage('Food logged');
+      setSelectedFood(null);
+      setSearchQuery('');
+      setWholeEggs(2);
+      setEggWhites(0);
+      setQtyInput('1');
     } catch (err) {
       console.error('Meal save error ❌', err);
+      showNutritionMessage('Unable to save food. Please try again.');
     }
-
-    setSelectedFood(null);
-    setSearchQuery('');
-    setWholeEggs(2);
-    setEggWhites(0);
   };
 
   const handleAiSearch = async () => {
@@ -188,6 +209,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
 
   const handleAddCustom = async () => {
     if (!customFood.name) return;
+
     const newMeal: Meal = {
       id: crypto.randomUUID(),
       ...customFood,
@@ -195,21 +217,14 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
       qty: 1,
       loggedAt: new Date().toISOString()
     };
-    setData((prev: AppData) => {
-      const foodWithCategory = { ...customFood, main: 'User Food' };
-      const isAlreadyInDb = combinedFoodList.some(f => f.name.toLowerCase() === customFood.name.toLowerCase());
-      const nextPersonalFood = isAlreadyInDb ? (prev.personalFood || []) : [...(prev.personalFood || []), foodWithCategory];
-      
-      return {
-        ...prev,
-        meals: {
-          ...prev.meals,
-          [viewDate]: [...(prev.meals[viewDate] || []), newMeal]
-        },
-        personalFood: nextPersonalFood
-      };
-    });
+
+    const foodWithCategory = { ...customFood, main: 'User Food' };
+    const isAlreadyInDb = combinedFoodList.some(
+      f => f.name.toLowerCase() === customFood.name.toLowerCase()
+    );
+
     try {
+      // Save to Supabase first, then update UI. This keeps local UI and cloud refresh in sync.
       await saveMeal({
         id: newMeal.id,
         date: viewDate,
@@ -223,13 +238,25 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         unit: customFood.unit || 'portion',
         loggedAt: newMeal.loggedAt,
       });
-      console.log('Meal saved to Supabase ✅');
+
+      setData((prev: AppData) => ({
+        ...prev,
+        meals: {
+          ...prev.meals,
+          [viewDate]: [...(prev.meals[viewDate] || []), newMeal]
+        },
+        personalFood: isAlreadyInDb
+          ? (prev.personalFood || [])
+          : [...(prev.personalFood || []), foodWithCategory]
+      }));
+
+      showNutritionMessage('Food logged');
+      setShowCustomForm(false);
+      setCustomFood({ name: '', calories: 0, protein: 0, carbs: 0, fats: 0, unit: 'portion', portion: '1 serving' });
     } catch (err) {
       console.error('Meal save error ❌', err);
+      showNutritionMessage('Unable to save food. Please try again.');
     }
-
-    setShowCustomForm(false);
-    setCustomFood({ name: '', calories: 0, protein: 0, carbs: 0, fats: 0, unit: 'portion', portion: '1 serving' });
   };
 
   const mains = Array.from(new Set(combinedFoodList.map(f => f.main)))
@@ -287,7 +314,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
 
   const handleEditMeal = (meal: Meal) => {
     setSelectedFood(meal);
-    setQty(Number(meal.qty) || 1);
+    setQtyInput(String(Number(meal.qty) || 1));
     setSelectedMeal(meal.meal);
     deleteMeal(meal.id);
   };
@@ -582,10 +609,15 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                   <div className="space-y-3">
                     <label className="label-small text-muted ml-1">Quantity (Multiplier)</label>
                     <input 
-                      type="number"
-                      step="0.5"
-                      value={qty}
-                      onChange={e => setQty(Number(e.target.value))}
+                      type="text"
+                      inputMode="decimal"
+                      value={qtyInput}
+                      onChange={e => {
+                        const next = e.target.value;
+                        if (/^\d*\.?\d*$/.test(next)) setQtyInput(next);
+                      }}
+                      onFocus={e => e.currentTarget.select()}
+                      placeholder="1"
                       className="w-full px-6 py-5 bg-white/[0.03] border border-border rounded-2xl text-2xl font-black focus:outline-none focus:border-lime transition-all"
                     />
                   </div>
