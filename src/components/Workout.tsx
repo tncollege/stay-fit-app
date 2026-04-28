@@ -90,6 +90,7 @@ export default function WorkoutView({
   const [searchQuery, setSearchQuery] = useState('');
   const [aiSearching, setAiSearching] = useState(false);
   const [savingWorkout, setSavingWorkout] = useState(false);
+  const [savingPlan, setSavingPlan] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
 
   const [editingSetId, setEditingSetId] = useState<number | string | null>(null);
@@ -247,13 +248,23 @@ export default function WorkoutView({
       planName: planNameInput.trim() || (editingPlanDay + ' Workout'),
       exercises: currentPlanDraft.exercises || [],
     };
-    setWorkoutPlans((prev) => ({ ...prev, [editingPlanDay]: plan }));
+
+    if (!plan.exercises.length) {
+      showWorkoutMessage('Add at least one exercise to this plan.', 'error');
+      return;
+    }
+
+    setSavingPlan(true);
+
     try {
       await saveWorkoutPlan(plan);
-      console.log('Workout plan saved ✅');
+      setWorkoutPlans((prev) => ({ ...prev, [editingPlanDay]: plan }));
+      showWorkoutMessage('Weekly plan saved successfully');
     } catch (err) {
       console.error('Workout plan save failed', err);
-      alert('Unable to save workout plan. Please try again.');
+      showWorkoutMessage('Unable to save weekly plan. Please try again.', 'error');
+    } finally {
+      setSavingPlan(false);
     }
   };
 
@@ -619,6 +630,7 @@ export default function WorkoutView({
                 addExerciseToPlan={addExerciseToPlan}
                 removeExerciseFromPlan={removeExerciseFromPlan}
                 saveCurrentPlan={saveCurrentPlan}
+                savingPlan={savingPlan}
                 clearCurrentPlan={clearCurrentPlan}
                 startTodayPlan={startTodayPlan}
                 suggestSets={suggestSets}
@@ -875,6 +887,7 @@ function WeeklyPlanSection(props: any) {
     addExerciseToPlan,
     removeExerciseFromPlan,
     saveCurrentPlan,
+    savingPlan,
     clearCurrentPlan,
     startTodayPlan,
     suggestSets,
@@ -1029,8 +1042,12 @@ function WeeklyPlanSection(props: any) {
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={saveCurrentPlan} className="py-4 rounded-2xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20">
-              Save Weekly Plan
+            <button
+              onClick={saveCurrentPlan}
+              disabled={savingPlan}
+              className="py-4 rounded-2xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 disabled:opacity-50 disabled:pointer-events-none active:scale-95 transition-all"
+            >
+              {savingPlan ? 'Saving...' : 'Save Weekly Plan'}
             </button>
             <button onClick={clearCurrentPlan} className="py-4 rounded-2xl bg-pink/15 text-pink border border-pink/30 text-[10px] font-black uppercase tracking-widest">
               Clear Day
