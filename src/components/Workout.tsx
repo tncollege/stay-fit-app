@@ -1,30 +1,49 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Brain,
+  CheckCircle2,
   Dumbbell,
+  Pause,
+  Play,
+  PlusCircle,
+  RotateCcw,
+  Search,
+  Sparkles,
   Timer,
   Trash2,
-  CheckCircle2,
-  Play,
-  Pause,
-  RotateCcw,
-  Sparkles,
-  Brain,
-  PlusCircle,
   X,
-  Search,
-  Trophy,
-  Wind,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { AppData, Workout } from '../lib/types';
 import { EXERCISE_DATABASE } from '../data/database';
-import { searchExerciseInfo, calculateRecoveryTime } from '../services/aiService';
+import { calculateRecoveryTime, searchExerciseInfo } from '../services/aiService';
 import DateNavigator from './DateNavigator';
-import { saveWorkout, deleteWorkoutFromCloud, loadWorkoutPlans, saveWorkoutPlan, deleteWorkoutPlan, saveCustomExercise } from '../services/cloudDataService';
+import {
+  deleteWorkoutFromCloud,
+  deleteWorkoutPlan,
+  loadWorkoutPlans,
+  saveCustomExercise,
+  saveWorkout,
+  saveWorkoutPlan,
+} from '../services/cloudDataService';
 
+type Tab = 'strength' | 'cardio' | 'sports' | 'yoga';
+
+const CATEGORY_IMAGES: Record<string, string> = {
+  Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
+  Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
+  Legs: 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?q=80&w=600&auto=format&fit=crop',
+  Shoulders: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?q=80&w=600&auto=format&fit=crop',
+  Arms: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=600&auto=format&fit=crop',
+  Core: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=600&auto=format&fit=crop',
+  Cardio: 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?q=80&w=600&auto=format&fit=crop',
+  Sports: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?q=80&w=600&auto=format&fit=crop',
+  Yoga: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=600&auto=format&fit=crop',
+};
 
 function showWorkoutMessage(message: string, tone: 'success' | 'error' = 'success') {
   if (typeof document === 'undefined') return;
+
   const existing = document.getElementById('stayfitinlife-workout-toast');
   if (existing) existing.remove();
 
@@ -40,20 +59,8 @@ function showWorkoutMessage(message: string, tone: 'success' | 'error' = 'succes
   window.setTimeout(() => el.remove(), 2600);
 }
 
-const CATEGORY_IMAGES: Record<string, string> = {
-  Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
-  Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
-  Legs: 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?q=80&w=600&auto=format&fit=crop',
-  Shoulders: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?q=80&w=600&auto=format&fit=crop',
-  Arms: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=600&auto=format&fit=crop',
-  Core: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=600&auto=format&fit=crop',
-  Cardio: 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?q=80&w=600&auto=format&fit=crop',
-  Sports: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?q=80&w=600&auto=format&fit=crop',
-  Yoga: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=600&auto=format&fit=crop',
-};
-
 function normalizeExerciseName(value: string) {
-  return value.replace(/\s*protocol$/i, '').trim();
+  return String(value || '').replace(/\s*protocol$/i, '').trim();
 }
 
 function toExerciseTitle(value: string) {
@@ -62,6 +69,89 @@ function toExerciseTitle(value: string) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
+}
+
+function getLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getWorkoutDisplayName(w: any) {
+  if (!w) return '';
+
+  const name = String(w.name || '').trim();
+
+  if (w.category && w.category !== 'Strength') {
+    return name;
+  }
+
+  const muscles: string[] = Array.isArray(w.muscles) ? w.muscles : [];
+  const exercises = (w.sets || []).map((s: any) => String(s.exercise || '').toLowerCase());
+
+  const hasBack =
+    muscles.includes('Back') ||
+    exercises.some((e: string) => e.includes('row') || e.includes('pulldown') || e.includes('pull'));
+
+  const hasBiceps =
+    muscles.includes('Arms') ||
+    exercises.some((e: string) => e.includes('curl') || e.includes('bicep'));
+
+  const hasChest =
+    muscles.includes('Chest') ||
+    exercises.some((e: string) => e.includes('bench') || e.includes('chest') || e.includes('fly'));
+
+  const hasShoulders =
+    muscles.includes('Shoulders') ||
+    exercises.some((e: string) => e.includes('shoulder') || e.includes('raise'));
+
+  const hasTriceps =
+    exercises.some((e: string) => e.includes('tricep') || e.includes('pushdown') || e.includes('extension'));
+
+  const hasLegs =
+    muscles.includes('Legs') ||
+    exercises.some((e: string) => e.includes('squat') || e.includes('leg') || e.includes('lunge'));
+
+  const genericNames = [
+    'Arms Workout',
+    'Chest Workout',
+    'Back Workout',
+    'Legs Workout',
+    'Shoulders Workout',
+    'Core Workout',
+  ];
+
+  // Preserve user-entered names like Pull Workout, Push Workout, Upper Body, etc.
+  if (name && !genericNames.includes(name)) return name;
+
+  if (hasBack && hasBiceps) return 'Pull Workout';
+  if ((hasChest || hasShoulders) && hasTriceps) return 'Push Workout';
+  if (hasLegs) return 'Legs Workout';
+
+  return name || 'Strength Workout';
+}
+
+function getDynamicCardioMetric(value: string) {
+  const ex = value.toLowerCase();
+  if (ex.includes('treadmill')) return 'Incline (%)';
+  if (ex.includes('cycling') || ex.includes('bike')) return 'Resistance';
+  if (ex.includes('rowing')) return 'Resistance';
+  if (ex.includes('stair') || ex.includes('climber')) return 'Floors';
+  if (ex.includes('running')) return 'Avg Heart Rate';
+  if (ex.includes('walking')) return 'Incline (%)';
+  if (ex.includes('hiit')) return 'Intensity (1-10)';
+  if (ex.includes('jump rope')) return 'Rounds';
+  return '';
+}
+
+function shouldShowDistance(value: string) {
+  const ex = value.toLowerCase();
+  if (!ex) return true;
+  if (ex.includes('hiit')) return false;
+  if (ex.includes('jump rope')) return false;
+  if (ex.includes('stair') || ex.includes('climber')) return false;
+  return true;
 }
 
 export default function WorkoutView({
@@ -75,10 +165,10 @@ export default function WorkoutView({
   viewDate: string;
   setViewDate: (d: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'strength' | 'cardio' | 'sports' | 'yoga'>('strength');
-  const [selectedMuscle, setSelectedMuscle] = useState<string>('Chest');
-  const [selectedSportSub, setSelectedSportSub] = useState<string>('Racket Sports');
-  const [selectedYogaSub, setSelectedYogaSub] = useState<string>('Vinyasa');
+  const [activeTab, setActiveTab] = useState<Tab>('strength');
+  const [selectedMuscle, setSelectedMuscle] = useState('Chest');
+  const [selectedSportSub, setSelectedSportSub] = useState('Racket Sports');
+  const [selectedYogaSub, setSelectedYogaSub] = useState('Vinyasa');
 
   const [currentSets, setCurrentSets] = useState<any[]>([]);
   const [workoutName, setWorkoutName] = useState('');
@@ -114,57 +204,64 @@ export default function WorkoutView({
   const [timerActive, setTimerActive] = useState(false);
   const [recoveryReason, setRecoveryReason] = useState('');
 
+  const [workoutPlans, setWorkoutPlans] = useState<Record<string, any>>({});
+  const [planEditorOpen, setPlanEditorOpen] = useState(false);
+
+  const dayNames = useMemo(
+    () => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    []
+  );
+
+  const todayName = dayNames[new Date(viewDate + 'T00:00:00').getDay()];
+  const [editingPlanDay, setEditingPlanDay] = useState(todayName);
+  const [planNameInput, setPlanNameInput] = useState('');
+  const [planExerciseInput, setPlanExerciseInput] = useState('');
+  const [planBodyPartInput, setPlanBodyPartInput] = useState('Chest');
+
+  const workoutsArr = data.workouts[viewDate] || [];
+  const personalExercises = data.personalExercises || [];
+
+  const yesterdayKey = useMemo(() => {
+    const d = new Date(viewDate + 'T00:00:00');
+    d.setDate(d.getDate() - 1);
+    return getLocalDateKey(d);
+  }, [viewDate]);
+
+  const yesterdayWorkouts = data.workouts[yesterdayKey] || [];
+  const currentPlanDraft = workoutPlans[editingPlanDay] || {
+    dayOfWeek: editingPlanDay,
+    planName: '',
+    exercises: [],
+  };
+  const todayPlan = workoutPlans[todayName];
+
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);
 
-  const workoutsArr = data.workouts[viewDate] || [];
-  const personalExercises = data.personalExercises || [];
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const todayName = dayNames[new Date(viewDate + 'T00:00:00').getDay()];
-  const yesterdayKey = (() => {
-    const d = new Date(viewDate + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  })();
-  const yesterdayWorkouts = data.workouts[yesterdayKey] || [];
-  const [workoutPlans, setWorkoutPlans] = useState<Record<string, any>>({});
-  const [planEditorOpen, setPlanEditorOpen] = useState(false);
-  const [editingPlanDay, setEditingPlanDay] = useState(todayName);
-  const [planNameInput, setPlanNameInput] = useState('');
-  const [planExerciseInput, setPlanExerciseInput] = useState('');
-  const [planBodyPartInput, setPlanBodyPartInput] = useState('Chest');
-  const currentPlanDraft = workoutPlans[editingPlanDay] || { dayOfWeek: editingPlanDay, planName: '', exercises: [] };
-  const todayPlan = workoutPlans[todayName];
-
-  const getDynamicCardioMetric = (value: string) => {
-    const ex = value.toLowerCase();
-    if (ex.includes('treadmill')) return 'Incline (%)';
-    if (ex.includes('cycling') || ex.includes('bike')) return 'Resistance';
-    if (ex.includes('rowing')) return 'Resistance';
-    if (ex.includes('stair') || ex.includes('climber')) return 'Floors';
-    if (ex.includes('running')) return 'Avg Heart Rate';
-    if (ex.includes('walking')) return 'Incline (%)';
-    if (ex.includes('hiit')) return 'Intensity (1-10)';
-    if (ex.includes('jump rope')) return 'Rounds';
-    return '';
-  };
-
-  const shouldShowDistance = (value: string) => {
-    const ex = value.toLowerCase();
-    if (!ex) return true;
-    if (ex.includes('hiit')) return false;
-    if (ex.includes('jump rope')) return false;
-    if (ex.includes('stair') || ex.includes('climber')) return false;
-    return true;
-  };
-
   useEffect(() => {
     setCardioExtraMetric(getDynamicCardioMetric(cardioExercise));
     setCardioExtraValue('');
   }, [cardioExercise]);
+
+  useEffect(() => {
+    loadWorkoutPlans()
+      .then((plans) => setWorkoutPlans(plans || {}))
+      .catch((err) => console.error('Workout plan load failed', err));
+  }, []);
+
+  useEffect(() => {
+    setEditingPlanDay(todayName);
+  }, [todayName]);
+
+  useEffect(() => {
+    const selected = workoutPlans[editingPlanDay];
+    setPlanNameInput(selected?.planName || '');
+    setPlanExerciseInput('');
+    setPlanBodyPartInput('Chest');
+  }, [editingPlanDay, workoutPlans]);
 
   const getExerciseOptions = (category: string, subcategory?: string) => {
     let fromBase: string[] = [];
@@ -177,24 +274,11 @@ export default function WorkoutView({
     }
 
     const fromPersonal = personalExercises
-      .filter((e) => e.bodyPart === (subcategory || category))
-      .map((e) => e.name);
+      .filter((e: any) => e.bodyPart === (subcategory || category))
+      .map((e: any) => e.name);
 
     return Array.from(new Set([...fromBase, ...fromPersonal].map((e) => toExerciseTitle(String(e)))));
   };
-
-  useEffect(() => {
-    loadWorkoutPlans()
-      .then((plans) => setWorkoutPlans(plans || {}))
-      .catch((err) => console.error('Workout plan load failed', err));
-  }, []);
-
-  useEffect(() => {
-    const selected = workoutPlans[editingPlanDay];
-    setPlanNameInput(selected?.planName || '');
-    setPlanExerciseInput('');
-    setPlanBodyPartInput('Chest');
-  }, [editingPlanDay, workoutPlans]);
 
   const suggestSets = () => {
     const goal = data.profile?.goal;
@@ -209,16 +293,33 @@ export default function WorkoutView({
   const suggestedRepsForExercise = (name: string, bodyPart?: string) => {
     const lower = name.toLowerCase();
     if (bodyPart === 'Core') return '12–20';
-    if (lower.includes('curl') || lower.includes('raise') || lower.includes('extension') || lower.includes('fly')) return '10–15';
-    if (lower.includes('deadlift') || lower.includes('squat') || lower.includes('bench') || lower.includes('press') || lower.includes('row')) return '6–10';
+    if (
+      lower.includes('curl') ||
+      lower.includes('raise') ||
+      lower.includes('extension') ||
+      lower.includes('fly')
+    ) {
+      return '10–15';
+    }
+    if (
+      lower.includes('deadlift') ||
+      lower.includes('squat') ||
+      lower.includes('bench') ||
+      lower.includes('press') ||
+      lower.includes('row')
+    ) {
+      return '6–10';
+    }
     return '8–10';
   };
 
   const addExerciseToPlan = () => {
     const name = toExerciseTitle(planExerciseInput);
     if (!name) return;
+
     const existing = currentPlanDraft.exercises || [];
     if (existing.some((ex: any) => ex.name.toLowerCase() === name.toLowerCase())) return;
+
     setWorkoutPlans((prev) => ({
       ...prev,
       [editingPlanDay]: {
@@ -245,7 +346,7 @@ export default function WorkoutView({
   const saveCurrentPlan = async () => {
     const plan = {
       dayOfWeek: editingPlanDay,
-      planName: planNameInput.trim() || (editingPlanDay + ' Workout'),
+      planName: planNameInput.trim() || editingPlanDay + ' Workout',
       exercises: currentPlanDraft.exercises || [],
     };
 
@@ -258,8 +359,26 @@ export default function WorkoutView({
 
     try {
       await saveWorkoutPlan(plan);
-      setWorkoutPlans((prev) => ({ ...prev, [editingPlanDay]: plan }));
+
+      setWorkoutPlans((prev) => ({
+        ...prev,
+        [editingPlanDay]: plan,
+      }));
+
       showWorkoutMessage('Weekly plan saved successfully');
+
+      setPlanEditorOpen(false);
+      setEditingPlanDay(todayName);
+      setPlanNameInput('');
+      setPlanExerciseInput('');
+      setPlanBodyPartInput('Chest');
+      setActiveTab('strength');
+
+      window.setTimeout(() => {
+        document
+          .querySelector('[data-weekly-plan-section]')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
     } catch (err) {
       console.error('Workout plan save failed', err);
       showWorkoutMessage('Unable to save weekly plan. Please try again.', 'error');
@@ -275,22 +394,29 @@ export default function WorkoutView({
       return next;
     });
     setPlanNameInput('');
+
     try {
       await deleteWorkoutPlan(editingPlanDay);
+      showWorkoutMessage('Plan cleared');
     } catch (err) {
       console.error('Workout plan delete failed', err);
+      showWorkoutMessage('Unable to clear plan. Please try again.', 'error');
     }
   };
 
   const startTodayPlan = () => {
     if (!todayPlan) return;
-    setWorkoutName(todayPlan.planName || (todayName + ' Workout'));
+
+    setWorkoutName(todayPlan.planName || todayName + ' Workout');
+
     const first = todayPlan.exercises?.[0];
     if (first) {
       setSelectedMuscle(first.bodyPart || 'Chest');
       setExercise(first.name);
     }
+
     setActiveTab('strength');
+    showWorkoutMessage('Today’s plan loaded');
   };
 
   const handleAddSet = async () => {
@@ -336,7 +462,7 @@ export default function WorkoutView({
         const fixedResult = { ...result, name: fixedName };
 
         const exists = (personalExercises || []).some(
-          (e) => e.name.toLowerCase() === fixedName.toLowerCase()
+          (e: any) => e.name.toLowerCase() === fixedName.toLowerCase()
         );
 
         if (!exists) {
@@ -344,7 +470,11 @@ export default function WorkoutView({
             ...prev,
             personalExercises: [...(prev.personalExercises || []), fixedResult],
           }));
-          saveCustomExercise({ ...fixedResult, bodyPart: fixedResult.bodyPart || 'Chest', source: 'ai' }).catch((err) => console.error('Custom exercise save failed', err));
+          saveCustomExercise({
+            ...fixedResult,
+            bodyPart: fixedResult.bodyPart || 'Chest',
+            source: 'ai',
+          }).catch((err) => console.error('Custom exercise save failed', err));
         }
 
         if (fixedResult.bodyPart === 'Cardio') {
@@ -388,7 +518,10 @@ export default function WorkoutView({
       ...prev,
       personalExercises: [...(prev.personalExercises || []), fixedCustom],
     }));
-    saveCustomExercise({ ...fixedCustom, source: 'manual' }).catch((err) => console.error('Custom exercise save failed', err));
+
+    saveCustomExercise({ ...fixedCustom, source: 'manual' }).catch((err) =>
+      console.error('Custom exercise save failed', err)
+    );
 
     if (fixedCustom.bodyPart === 'Cardio') {
       setCardioExercise(fixedCustom.name);
@@ -468,14 +601,18 @@ export default function WorkoutView({
     const workoutMuscles = Array.from(
       new Set(currentSets.map((s: any) => s.muscle || selectedMuscle).filter(Boolean))
     );
+
     const autoWorkoutName =
       workoutMuscles.length > 1
         ? `${workoutMuscles.join(' + ')} Workout`
         : `${workoutMuscles[0] || selectedMuscle} Workout`;
 
+    const finalWorkoutName =
+      workoutName && workoutName.trim().length > 1 ? workoutName.trim() : autoWorkoutName;
+
     const newWorkout: Workout = {
       id: crypto.randomUUID(),
-      name: workoutName.trim() || autoWorkoutName,
+      name: finalWorkoutName,
       category: 'Strength',
       muscles: workoutMuscles.length ? workoutMuscles : [selectedMuscle],
       sets: currentSets,
@@ -524,9 +661,10 @@ export default function WorkoutView({
 
     try {
       await deleteWorkoutFromCloud(id);
-      console.log('Workout deleted from Supabase ✅');
+      showWorkoutMessage('Workout deleted');
     } catch (err) {
       console.error('Supabase workout delete error ❌', err);
+      showWorkoutMessage('Unable to delete workout. Please try again.', 'error');
     }
   };
 
@@ -549,7 +687,8 @@ export default function WorkoutView({
       setActiveTab('yoga');
     } else {
       setCurrentSets(workout.sets);
-      setSelectedMuscle(workout.muscles[0] || 'Chest');
+      setSelectedMuscle(workout.muscles?.[0] || 'Chest');
+      setWorkoutName(workout.name || '');
       setActiveTab('strength');
     }
 
@@ -592,24 +731,7 @@ export default function WorkoutView({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <div className="stat-card space-y-8">
-              <div className="flex gap-2 p-1 bg-black/40 rounded-2xl border border-border w-fit overflow-x-auto max-w-full scrollbar-hide">
-                {[
-                  ['strength', 'Strength'],
-                  ['cardio', 'Cardio'],
-                  ['sports', 'Sports'],
-                  ['yoga', 'Yoga'],
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => setActiveTab(id as any)}
-                    className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${
-                      activeTab === id ? 'bg-lime text-dark shadow-lg shadow-lime/20' : 'text-white/30 hover:text-white'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <TabSwitcher activeTab={activeTab} setActiveTab={setActiveTab} />
 
               <WeeklyPlanSection
                 dayNames={dayNames}
@@ -638,34 +760,13 @@ export default function WorkoutView({
                 yesterdayWorkouts={yesterdayWorkouts}
               />
 
-              <div className="relative">
-                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-white/20" size={18} />
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-28 py-5 bg-white/[0.02] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all placeholder:opacity-20"
-                  placeholder="Search exercise with AI..."
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  <button
-                    onClick={handleAiSearch}
-                    disabled={aiSearching || !searchQuery}
-                    className={`p-2 rounded-xl border transition-all ${
-                      aiSearching
-                        ? 'bg-white/5 border-white/10 text-white/20'
-                        : 'bg-sky/10 border-sky/20 text-sky hover:bg-sky/20'
-                    }`}
-                  >
-                    <Sparkles size={18} className={aiSearching ? 'animate-pulse' : ''} />
-                  </button>
-                  <button
-                    onClick={() => setShowCustomForm(true)}
-                    className="p-2 bg-pink/10 text-pink rounded-xl border border-pink/20 hover:bg-pink/20 transition-all"
-                  >
-                    <PlusCircle size={18} />
-                  </button>
-                </div>
-              </div>
+              <AISearchBar
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                handleAiSearch={handleAiSearch}
+                aiSearching={aiSearching}
+                setShowCustomForm={setShowCustomForm}
+              />
 
               {activeTab === 'strength' ? (
                 <StrengthPanel
@@ -709,7 +810,6 @@ export default function WorkoutView({
                   cardioExtraMetric={cardioExtraMetric}
                   cardioExtraValue={cardioExtraValue}
                   setCardioExtraValue={setCardioExtraValue}
-                  shouldShowDistance={shouldShowDistance}
                   handleAddCardio={handleAddCardio}
                 />
               ) : activeTab === 'sports' ? (
@@ -749,123 +849,79 @@ export default function WorkoutView({
               reason={recoveryReason}
             />
 
-            <div id="workout-history" className="stat-card">
-              <h3 className="label-small mb-6 text-pink">Temporal Record</h3>
-
-              {workoutsArr.length === 0 ? (
-                <div className="py-16 text-center">
-                  <div className="label-small opacity-20 italic">No output recorded for this date</div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {workoutsArr.map((w, idx) => (
-                    <div
-                      key={w.id || idx}
-                      className="p-5 bg-white/[0.02] border border-border rounded-2xl space-y-3 group/session transition-all hover:border-white/10"
-                    >
-                      <div className="flex justify-between items-center gap-4">
-                        <div>
-                          <p className="font-bold text-sm tracking-tight">{w.name}</p>
-                          <span className="label-small text-sky">{w.category}</span>
-                        </div>
-
-                        <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover/session:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleEditWorkout(w)}
-                            className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.6)] transition-all active:scale-95"
-                          >
-                            <Search size={14} />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteWorkout(w.id)}
-                            className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.6)] transition-all active:scale-95"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest opacity-40">
-                        <span>{w.sets.length} total units</span>
-                        <span className="text-lime">{w.caloriesBurned} kcal net</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <WorkoutHistory
+              workoutsArr={workoutsArr}
+              handleEditWorkout={handleEditWorkout}
+              handleDeleteWorkout={handleDeleteWorkout}
+            />
           </div>
         </div>
       </div>
 
-      <AnimatePresence>
-        {showCustomForm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCustomForm(false)}
-              className="absolute inset-0 bg-black/90 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-full max-w-md bg-panel border border-border p-10 rounded-[3rem] shadow-2xl"
-            >
-              <button
-                onClick={() => setShowCustomForm(false)}
-                className="absolute top-8 right-8 p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-all"
-              >
-                <X size={18} />
-              </button>
-
-              <div className="label-small text-pink mb-2">Custom Biometric Input</div>
-              <h3 className="text-3xl font-black mb-10">Add Custom Exercise</h3>
-
-              <div className="space-y-5">
-                <div className="space-y-2">
-                  <label className="label-small text-muted ml-1 uppercase opacity-40">Exercise Name</label>
-                  <input
-                    value={customExercise.name}
-                    onChange={(e) => setCustomExercise({ ...customExercise, name: e.target.value })}
-                    placeholder="Enter exercise name..."
-                    className="w-full px-6 py-4 bg-white/[0.03] border border-border rounded-2xl text-lg font-bold focus:outline-none focus:border-pink transition-all"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="label-small text-muted ml-1 uppercase opacity-40">Body Part</label>
-                  <select
-                    value={customExercise.bodyPart}
-                    onChange={(e) => setCustomExercise({ ...customExercise, bodyPart: e.target.value })}
-                    className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-pink transition-all appearance-none"
-                  >
-                    {Object.keys(EXERCISE_DATABASE).map((m) => (
-                      <option key={m} value={m} className="bg-dark">
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  onClick={handleAddCustomExercise}
-                  className="w-full py-5 bg-pink text-dark font-black rounded-2xl shadow-xl shadow-pink/20 uppercase text-xs tracking-widest active:scale-95 transition-all mt-4"
-                >
-                  Add Exercise
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <CustomExerciseModal
+        showCustomForm={showCustomForm}
+        setShowCustomForm={setShowCustomForm}
+        customExercise={customExercise}
+        setCustomExercise={setCustomExercise}
+        handleAddCustomExercise={handleAddCustomExercise}
+      />
     </>
   );
 }
 
+function TabSwitcher({ activeTab, setActiveTab }: any) {
+  return (
+    <div className="flex gap-2 p-1 bg-black/40 rounded-2xl border border-border w-fit overflow-x-auto max-w-full scrollbar-hide">
+      {[
+        ['strength', 'Strength'],
+        ['cardio', 'Cardio'],
+        ['sports', 'Sports'],
+        ['yoga', 'Yoga'],
+      ].map(([id, label]) => (
+        <button
+          key={id}
+          onClick={() => setActiveTab(id)}
+          className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${
+            activeTab === id ? 'bg-lime text-dark shadow-lg shadow-lime/20' : 'text-white/30 hover:text-white'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AISearchBar({ searchQuery, setSearchQuery, handleAiSearch, aiSearching, setShowCustomForm }: any) {
+  return (
+    <div className="relative">
+      <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-white/20" size={18} />
+      <input
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        className="w-full pl-12 pr-28 py-5 bg-white/[0.02] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all placeholder:opacity-20"
+        placeholder="Search exercise with AI..."
+      />
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+        <button
+          onClick={handleAiSearch}
+          disabled={aiSearching || !searchQuery}
+          className={`p-2 rounded-xl border transition-all ${
+            aiSearching ? 'bg-white/5 border-white/10 text-white/20' : 'bg-sky/10 border-sky/20 text-sky hover:bg-sky/20'
+          }`}
+        >
+          <Sparkles size={18} className={aiSearching ? 'animate-pulse' : ''} />
+        </button>
+        <button
+          onClick={() => setShowCustomForm(true)}
+          className="p-2 bg-pink/10 text-pink rounded-xl border border-pink/20 hover:bg-pink/20 transition-all"
+        >
+          <PlusCircle size={18} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function WeeklyPlanSection(props: any) {
   const {
@@ -896,24 +952,16 @@ function WeeklyPlanSection(props: any) {
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
-  const yesterdayNames = (yesterdayWorkouts || [])
-  .map((w: any) => w.name)
-  .filter(Boolean);
+  const yesterdayNames = (yesterdayWorkouts || []).map((w: any) => getWorkoutDisplayName(w)).filter(Boolean);
+  const yesterdaySummary = yesterdayNames.length > 1 ? yesterdayNames.join(' + ') : yesterdayNames[0];
 
-const yesterdaySummary =
-  yesterdayNames.length > 1
-    ? yesterdayNames.join(' + ')
-    : yesterdayNames[0];
+  const yesterdayNote =
+    yesterdaySummary && todayPlan?.planName
+      ? `Yesterday you logged ${yesterdaySummary}. Today is planned as ${todayPlan.planName}. Update the weekly plan if your split changed.`
+      : '';
 
-const yesterdayNote = yesterdaySummary && todayPlan?.planName
-  ? 'Yesterday you logged ' +
-    yesterdaySummary +
-    '. Today is planned as ' +
-    todayPlan.planName +
-    '. Update the weekly plan if your split changed.'
-  : '';
   return (
-    <div className="rounded-[2rem] border border-lime/20 bg-lime/[0.03] p-5 space-y-5">
+    <div data-weekly-plan-section className="rounded-[2rem] border border-lime/20 bg-lime/[0.03] p-5 space-y-5">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <div className="label-small text-lime mb-2">Today’s Workout Plan • {todayName}</div>
@@ -1000,7 +1048,9 @@ const yesterdayNote = yesterdaySummary && todayPlan?.planName
                 className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
               >
                 {['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'].map((m) => (
-                  <option key={m} value={m} className="bg-dark">{m}</option>
+                  <option key={m} value={m} className="bg-dark">
+                    {m}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1060,7 +1110,10 @@ const yesterdayNote = yesterdaySummary && todayPlan?.planName
             >
               {savingPlan ? 'Saving...' : 'Save Weekly Plan'}
             </button>
-            <button onClick={clearCurrentPlan} className="py-4 rounded-2xl bg-pink/15 text-pink border border-pink/30 text-[10px] font-black uppercase tracking-widest">
+            <button
+              onClick={clearCurrentPlan}
+              className="py-4 rounded-2xl bg-pink/15 text-pink border border-pink/30 text-[10px] font-black uppercase tracking-widest"
+            >
               Clear Day
             </button>
           </div>
@@ -1215,26 +1268,8 @@ function StrengthPanel(props: any) {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="label-small text-muted ml-1">Load (KG)</div>
-              <input
-                type="number"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-black focus:outline-none focus:border-lime transition-all"
-                placeholder="0 (BW)"
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="label-small text-muted ml-1">Volume (Reps)</div>
-              <input
-                type="number"
-                value={reps}
-                onChange={(e) => setReps(e.target.value)}
-                className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-black focus:outline-none focus:border-lime transition-all"
-                placeholder="10"
-              />
-            </div>
+            <InputBlock label="Load (KG)" value={weight} onChange={setWeight} placeholder="0 (BW)" />
+            <InputBlock label="Volume (Reps)" value={reps} onChange={setReps} placeholder="10" />
           </div>
         </div>
 
@@ -1265,29 +1300,7 @@ function StrengthPanel(props: any) {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <div className="flex justify-between items-center mb-2 px-1">
-          <div className="label-small text-muted">Intensity (RPE Scale)</div>
-          <span className={`text-[10px] font-black uppercase ${Number(rpe) > 8 ? 'text-pink' : 'text-lime'}`}>
-            {rpe === '10' ? 'Failure' : rpe === '9' ? 'Extreme' : rpe === '8' ? 'Heavy' : 'Moderate'}
-          </span>
-        </div>
-        <div className="grid grid-cols-5 gap-2">
-          {['6', '7', '8', '9', '10'].map((val) => (
-            <button
-              key={val}
-              onClick={() => setRpe(val)}
-              className={`py-3 rounded-xl text-xs font-black transition-all border ${
-                rpe === val
-                  ? 'bg-lime text-dark border-lime shadow-[0_0_15px_rgba(215,255,0,0.2)]'
-                  : 'bg-white/5 border-border text-white/40 hover:border-lime/30'
-              }`}
-            >
-              {val}
-            </button>
-          ))}
-        </div>
-      </div>
+      <RpeSelector rpe={rpe} setRpe={setRpe} />
 
       <button
         onClick={handleAddSet}
@@ -1297,119 +1310,200 @@ function StrengthPanel(props: any) {
       </button>
 
       {currentSets.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-          <div className="space-y-4 mb-6">
-            <div>
-              <div className="label-small text-muted mb-2 ml-1">Workout Name</div>
-              <input
-                value={workoutName}
-                onChange={(e) => setWorkoutName(e.target.value)}
-                className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-                placeholder="Push, Pull, Upper Body, Full Body..."
-              />
-            </div>
-            <div className="flex justify-between items-center">
-              <div className="label-small text-lime">Active Bio-Calibration Session</div>
-              <button
-                onClick={handleFinishWorkout}
-                disabled={savingWorkout}
-                className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {savingWorkout ? 'Saving...' : 'Submit Session'}
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {currentSets.map((s: any, idx: number) => (
-              <div
-                key={s.id}
-                className="flex justify-between items-center p-5 bg-white/[0.02] border border-border rounded-2xl group hover:border-lime/30 transition-all"
-              >
-                {editingSetId === s.id ? (
-                  <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-4">
-                    <div className="flex-1">
-                      <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
-                      <div className="label-small opacity-30 mt-1">Editing Calibration {idx + 1}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={editWeight}
-                        onChange={(e) => setEditWeight(e.target.value)}
-                        className="w-20 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
-                        placeholder="0"
-                      />
-                      <input
-                        type="number"
-                        value={editReps}
-                        onChange={(e) => setEditReps(e.target.value)}
-                        className="w-16 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
-                        placeholder="Reps"
-                      />
-                      <button onClick={() => handleUpdateSet(s.id)} className="p-2 bg-lime text-dark rounded-lg hover:bg-lime/80 transition-all">
-                        <CheckCircle2 size={14} />
-                      </button>
-                      <button onClick={() => setEditingSetId(null)} className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white transition-all">
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="label-small opacity-30">Set {idx + 1}</div>
-                        {s.rpe && (
-                          <div
-                            className={`px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase ${
-                              Number(s.rpe) >= 9 ? 'bg-pink/20 text-pink' : 'bg-lime/20 text-lime'
-                            }`}
-                          >
-                            RPE {s.rpe}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-xs font-black text-lime">
-                          {s.weight === '0' ? 'BW' : s.weight}
-                          {s.weight !== '0' && <span className="text-[10px] opacity-40 ml-1">KG</span>}
-                        </div>
-                        <div className="text-[10px] font-bold opacity-30">Load</div>
-                      </div>
-                      <div className="w-px h-6 bg-white/10" />
-                      <div className="text-right">
-                        <div className="text-xs font-black text-white">{s.reps}</div>
-                        <div className="text-[10px] font-bold opacity-30">Reps</div>
-                      </div>
-
-                      <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => handleStartEditingSet(s)}
-                          className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.35)] transition-all active:scale-95"
-                        >
-                          <Search size={14} />
-                        </button>
-                        <button
-                          onClick={() => setCurrentSets(currentSets.filter((x: any) => x.id !== s.id))}
-                          className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.35)] transition-all active:scale-95"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        </motion.div>
+        <ActiveSets
+          currentSets={currentSets}
+          setCurrentSets={setCurrentSets}
+          editingSetId={editingSetId}
+          editWeight={editWeight}
+          setEditWeight={setEditWeight}
+          editReps={editReps}
+          setEditReps={setEditReps}
+          handleStartEditingSet={handleStartEditingSet}
+          handleUpdateSet={handleUpdateSet}
+          workoutName={workoutName}
+          setWorkoutName={setWorkoutName}
+          handleFinishWorkout={handleFinishWorkout}
+          savingWorkout={savingWorkout}
+          setEditingSetId={setEditingSetId}
+        />
       )}
     </div>
+  );
+}
+
+function InputBlock({ label, value, onChange, placeholder }: any) {
+  return (
+    <div className="space-y-2">
+      <div className="label-small text-muted ml-1">{label}</div>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-black focus:outline-none focus:border-lime transition-all"
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function RpeSelector({ rpe, setRpe }: any) {
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-center mb-2 px-1">
+        <div className="label-small text-muted">Intensity (RPE Scale)</div>
+        <span className={`text-[10px] font-black uppercase ${Number(rpe) > 8 ? 'text-pink' : 'text-lime'}`}>
+          {rpe === '10' ? 'Failure' : rpe === '9' ? 'Extreme' : rpe === '8' ? 'Heavy' : 'Moderate'}
+        </span>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
+        {['6', '7', '8', '9', '10'].map((val) => (
+          <button
+            key={val}
+            onClick={() => setRpe(val)}
+            className={`py-3 rounded-xl text-xs font-black transition-all border ${
+              rpe === val
+                ? 'bg-lime text-dark border-lime shadow-[0_0_15px_rgba(215,255,0,0.2)]'
+                : 'bg-white/5 border-border text-white/40 hover:border-lime/30'
+            }`}
+          >
+            {val}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActiveSets(props: any) {
+  const {
+    currentSets,
+    setCurrentSets,
+    editingSetId,
+    editWeight,
+    setEditWeight,
+    editReps,
+    setEditReps,
+    handleStartEditingSet,
+    handleUpdateSet,
+    workoutName,
+    setWorkoutName,
+    handleFinishWorkout,
+    savingWorkout,
+    setEditingSetId,
+  } = props;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      <div className="space-y-4 mb-6">
+        <div>
+          <div className="label-small text-muted mb-2 ml-1">Workout Name</div>
+          <input
+            value={workoutName}
+            onChange={(e) => setWorkoutName(e.target.value)}
+            className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
+            placeholder="Push, Pull, Upper Body, Full Body..."
+          />
+        </div>
+        <div className="flex justify-between items-center">
+          <div className="label-small text-lime">Active Bio-Calibration Session</div>
+          <button
+            onClick={handleFinishWorkout}
+            disabled={savingWorkout}
+            className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {savingWorkout ? 'Saving...' : 'Submit Session'}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {currentSets.map((s: any, idx: number) => (
+          <div
+            key={s.id}
+            className="flex justify-between items-center p-5 bg-white/[0.02] border border-border rounded-2xl group hover:border-lime/30 transition-all"
+          >
+            {editingSetId === s.id ? (
+              <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex-1">
+                  <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
+                  <div className="label-small opacity-30 mt-1">Editing Calibration {idx + 1}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={editWeight}
+                    onChange={(e) => setEditWeight(e.target.value)}
+                    className="w-20 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
+                    placeholder="0"
+                  />
+                  <input
+                    type="number"
+                    value={editReps}
+                    onChange={(e) => setEditReps(e.target.value)}
+                    className="w-16 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
+                    placeholder="Reps"
+                  />
+                  <button onClick={() => handleUpdateSet(s.id)} className="p-2 bg-lime text-dark rounded-lg hover:bg-lime/80 transition-all">
+                    <CheckCircle2 size={14} />
+                  </button>
+                  <button onClick={() => setEditingSetId(null)} className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white transition-all">
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="label-small opacity-30">Set {idx + 1}</div>
+                    {s.rpe && (
+                      <div
+                        className={`px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase ${
+                          Number(s.rpe) >= 9 ? 'bg-pink/20 text-pink' : 'bg-lime/20 text-lime'
+                        }`}
+                      >
+                        RPE {s.rpe}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-xs font-black text-lime">
+                      {s.weight === '0' ? 'BW' : s.weight}
+                      {s.weight !== '0' && <span className="text-[10px] opacity-40 ml-1">KG</span>}
+                    </div>
+                    <div className="text-[10px] font-bold opacity-30">Load</div>
+                  </div>
+                  <div className="w-px h-6 bg-white/10" />
+                  <div className="text-right">
+                    <div className="text-xs font-black text-white">{s.reps}</div>
+                    <div className="text-[10px] font-bold opacity-30">Reps</div>
+                  </div>
+
+                  <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleStartEditingSet(s)}
+                      className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.35)] transition-all active:scale-95"
+                    >
+                      <Search size={14} />
+                    </button>
+                    <button
+                      onClick={() => setCurrentSets(currentSets.filter((x: any) => x.id !== s.id))}
+                      className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.35)] transition-all active:scale-95"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
@@ -1425,7 +1519,6 @@ function CardioPanel(props: any) {
     cardioExtraMetric,
     cardioExtraValue,
     setCardioExtraValue,
-    shouldShowDistance,
     handleAddCardio,
   } = props;
 
@@ -1460,7 +1553,15 @@ function CardioPanel(props: any) {
         </div>
       </div>
 
-      <div className={`grid gap-4 ${cardioExtraMetric && shouldShowDistance(cardioExercise) ? 'grid-cols-2 sm:grid-cols-3' : cardioExtraMetric || shouldShowDistance(cardioExercise) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      <div
+        className={`grid gap-4 ${
+          cardioExtraMetric && shouldShowDistance(cardioExercise)
+            ? 'grid-cols-2 sm:grid-cols-3'
+            : cardioExtraMetric || shouldShowDistance(cardioExercise)
+              ? 'grid-cols-2'
+              : 'grid-cols-1'
+        }`}
+      >
         <div className="space-y-2">
           <div className="label-small text-muted ml-1">Duration (Min)</div>
           <input
@@ -1591,6 +1692,127 @@ function SportsYogaPanel(props: any) {
         </div>
       </div>
     </div>
+  );
+}
+
+function WorkoutHistory({ workoutsArr, handleEditWorkout, handleDeleteWorkout }: any) {
+  return (
+    <div id="workout-history" className="stat-card">
+      <h3 className="label-small mb-6 text-pink">Temporal Record</h3>
+
+      {workoutsArr.length === 0 ? (
+        <div className="py-16 text-center">
+          <div className="label-small opacity-20 italic">No output recorded for this date</div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {workoutsArr.map((w: any, idx: number) => (
+            <div
+              key={w.id || idx}
+              className="p-5 bg-white/[0.02] border border-border rounded-2xl space-y-3 group/session transition-all hover:border-white/10"
+            >
+              <div className="flex justify-between items-center gap-4">
+                <div>
+                  <p className="font-bold text-sm tracking-tight">{w.name}</p>
+                  <span className="label-small text-sky">{w.category}</span>
+                </div>
+
+                <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover/session:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => handleEditWorkout(w)}
+                    className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.6)] transition-all active:scale-95"
+                  >
+                    <Search size={14} />
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteWorkout(w.id)}
+                    className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.6)] transition-all active:scale-95"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest opacity-40">
+                <span>{w.sets.length} total units</span>
+                <span className="text-lime">{w.caloriesBurned} kcal net</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomExerciseModal(props: any) {
+  const { showCustomForm, setShowCustomForm, customExercise, setCustomExercise, handleAddCustomExercise } = props;
+
+  return (
+    <AnimatePresence>
+      {showCustomForm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowCustomForm(false)}
+            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="relative w-full max-w-md bg-panel border border-border p-10 rounded-[3rem] shadow-2xl"
+          >
+            <button
+              onClick={() => setShowCustomForm(false)}
+              className="absolute top-8 right-8 p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="label-small text-pink mb-2">Custom Biometric Input</div>
+            <h3 className="text-3xl font-black mb-10">Add Custom Exercise</h3>
+
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <label className="label-small text-muted ml-1 uppercase opacity-40">Exercise Name</label>
+                <input
+                  value={customExercise.name}
+                  onChange={(e) => setCustomExercise({ ...customExercise, name: e.target.value })}
+                  placeholder="Enter exercise name..."
+                  className="w-full px-6 py-4 bg-white/[0.03] border border-border rounded-2xl text-lg font-bold focus:outline-none focus:border-pink transition-all"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="label-small text-muted ml-1 uppercase opacity-40">Body Part</label>
+                <select
+                  value={customExercise.bodyPart}
+                  onChange={(e) => setCustomExercise({ ...customExercise, bodyPart: e.target.value })}
+                  className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-pink transition-all appearance-none"
+                >
+                  {Object.keys(EXERCISE_DATABASE).map((m) => (
+                    <option key={m} value={m} className="bg-dark">
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={handleAddCustomExercise}
+                className="w-full py-5 bg-pink text-dark font-black rounded-2xl shadow-xl shadow-pink/20 uppercase text-xs tracking-widest active:scale-95 transition-all mt-4"
+              >
+                Add Exercise
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
 
