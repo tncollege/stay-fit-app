@@ -28,6 +28,50 @@ import {
   saveWorkoutPlan,
 } from '../services/cloudDataService';
 
+const FORM_TIPS: Record<string, any> = {
+  'lat pulldown': {
+    cues: [
+      'Pull elbows down, not hands',
+      'Keep chest up and slight lean back',
+      'Full stretch at top',
+    ],
+    mistakes: [
+      'Leaning too far back',
+      'Using momentum',
+      'Partial reps',
+    ],
+    pro: 'Pause 1 second at bottom for better activation',
+  },
+
+  'deadlift': {
+    cues: [
+      'Keep bar close to body',
+      'Neutral spine throughout',
+      'Push through heels',
+    ],
+    mistakes: [
+      'Rounding lower back',
+      'Jerking the bar',
+      'Overextending at top',
+    ],
+    pro: 'Think “push floor away” instead of pulling bar',
+  },
+
+  'barbell curl': {
+    cues: [
+      'Keep elbows fixed',
+      'Full stretch at bottom',
+      'Controlled tempo',
+    ],
+    mistakes: [
+      'Swinging body',
+      'Using shoulders',
+      'Half reps',
+    ],
+    pro: 'Slow eccentric = better growth',
+  },
+};
+
 type Tab = 'strength' | 'cardio' | 'sports' | 'yoga';
 
 const CATEGORY_IMAGES: Record<string, string> = {
@@ -240,6 +284,7 @@ export default function WorkoutView({
   const [cardioDistance, setCardioDistance] = useState('');
   const [cardioExtraValue, setCardioExtraValue] = useState('');
   const [cardioExtraMetric, setCardioExtraMetric] = useState('');
+  const [showTipsFor, setShowTipsFor] = useState<string | null>(null);
 
   const [customExercise, setCustomExercise] = useState({
     name: '',
@@ -790,28 +835,47 @@ const allWorkouts = useMemo<Workout[]>(() => {
   return (
     <>
       {timerActive && (
-        <div className="fixed top-24 right-4 z-[95] rounded-2xl border border-lime/30 bg-panel/95 px-5 py-4 text-lime shadow-xl shadow-lime/20 backdrop-blur-md">
-          <div className="text-[9px] font-black uppercase tracking-widest opacity-70">Rest Timer</div>
-          <div className="text-2xl font-black font-mono">
-            {Math.floor(timerTime / 60)}:{String(timerTime % 60).padStart(2, '0')}
-          </div>
-        </div>
-      )}
+  <div className="fixed top-24 right-4 z-[95] rounded-2xl border border-lime/30 bg-panel/95 px-5 py-4 text-lime shadow-xl shadow-lime/20 backdrop-blur-md">
+    <div className="text-[9px] font-black uppercase tracking-widest opacity-70">
+      Rest Timer
+    </div>
+    <div className="text-2xl font-black font-mono">
+      {Math.floor(timerTime / 60)}:
+      {String(timerTime % 60).padStart(2, '0')}
+    </div>
+  </div>
+)}
 
-      <div className="space-y-6">
-        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-          <div>
-            <h2 className="text-4xl font-black uppercase tracking-tighter">Workout Log</h2>
-            <div className="flex items-center gap-4 mt-2">
-              <div className="label-small text-lime tracking-[0.2em]">Track sets, reps, volume and progress</div>
-              <div className="h-1 w-1 rounded-full bg-white/20" />
-              <div className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
-                {workoutsArr.length} Sessions Logged
-              </div>
-            </div>
-          </div>
-          <DateNavigator viewDate={viewDate} setViewDate={setViewDate} />
-        </header>
+{/* MAIN CONTAINER */}
+<div className="space-y-6 relative">
+
+  {/* HEADER */}
+  <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+    
+    <div>
+      <h2 className="text-4xl font-black uppercase tracking-tighter">
+        Workout Log
+      </h2>
+
+      <div className="flex items-center gap-4 mt-2">
+        <div className="label-small text-lime tracking-[0.2em]">
+          Track sets, reps, volume and progress
+        </div>
+
+        <div className="h-1 w-1 rounded-full bg-white/20" />
+
+        <div className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
+          {workoutsArr.length} Sessions Logged
+        </div>
+      </div>
+    </div>
+
+    {/* DATE NAV */}
+    <div className="flex items-center justify-end">
+      <DateNavigator viewDate={viewDate} setViewDate={setViewDate} />
+    </div>
+
+  </header>
 
         <SessionSummary
           totalSets={currentSets.length}
@@ -853,7 +917,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 startPlanExercise={startPlanExercise}
                 completedPlanExercises={completedPlanExercises}
                 togglePlanExerciseComplete={togglePlanExerciseComplete}
-              />
+  setShowTipsFor={setShowTipsFor}   
+/>
 
               <AISearchBar
                 searchQuery={searchQuery}
@@ -955,7 +1020,77 @@ const allWorkouts = useMemo<Workout[]>(() => {
           </div>
         </div>
       </div>
+{showTipsFor && (
+  <div
+    className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center"
+    onClick={() => setShowTipsFor(null)} // ✅ click outside closes
+  >
+    <div
+      className="w-full max-w-md bg-[#111] rounded-t-3xl p-5"
+      onClick={(e) => e.stopPropagation()} // ✅ prevent inside click closing
+    >
 
+      {/* Title */}
+      <div className="flex justify-between items-center mb-3">
+        <div className="text-sm font-black text-lime uppercase">
+          {showTipsFor}
+        </div>
+
+        {/* Close Icon */}
+        <button
+          onClick={() => setShowTipsFor(null)}
+          className="text-white/40 hover:text-white transition"
+        >
+          ✕
+        </button>
+      </div>
+
+      {(() => {
+        const normalized = normalizeExerciseName(showTipsFor).toLowerCase();
+
+        const key = Object.keys(FORM_TIPS).find(k =>
+  normalized.includes(k) || k.includes(normalized)
+);
+
+        const tips = key ? FORM_TIPS[key] : null;
+
+        if (!tips) {
+          return (
+            <div className="text-xs text-white/70 leading-relaxed">
+              Keep your form controlled, use full range of motion, and avoid momentum.
+            </div>
+          );
+        }
+
+        return (
+          <>
+            {/* CUES */}
+            <div className="mb-4">
+              <div className="text-[10px] uppercase text-lime font-bold mb-1">Key Cues</div>
+              {tips.cues.map((c: string, i: number) => (
+                <div key={i} className="text-xs text-white/80">✔ {c}</div>
+              ))}
+            </div>
+
+            {/* MISTAKES */}
+            <div className="mb-4">
+              <div className="text-[10px] uppercase text-pink font-bold mb-1">Avoid</div>
+              {tips.mistakes.map((m: string, i: number) => (
+                <div key={i} className="text-xs text-white/60">✖ {m}</div>
+              ))}
+            </div>
+
+            {/* PRO TIP */}
+            <div className="p-3 bg-lime/10 border border-lime/30 rounded-xl text-xs">
+              💡 {tips.pro}
+            </div>
+          </>
+        );
+      })()}
+
+    </div>
+  </div>
+)}
       <CustomExerciseModal
         showCustomForm={showCustomForm}
         setShowCustomForm={setShowCustomForm}
@@ -1077,7 +1212,7 @@ function WeeklyPlanSection(props: any) {
   const plannedExercises = todayPlan?.exercises || [];
   const yesterdayNames = (yesterdayWorkouts || []).map((w: any) => getWorkoutDisplayName(w)).filter(Boolean);
   const yesterdaySummary = yesterdayNames.length > 1 ? yesterdayNames.join(' + ') : yesterdayNames[0];
-
+const { setShowTipsFor } = props;
   const yesterdayNote =
     yesterdaySummary && todayPlan?.planName
       ? `Yesterday you logged ${yesterdaySummary}. Today is planned as ${todayPlan.planName}. Update the weekly plan if your split changed.`
@@ -1149,9 +1284,12 @@ function WeeklyPlanSection(props: any) {
                 <button className="py-2 rounded-xl bg-white/[0.03] text-white/40 border border-border text-[9px] font-black uppercase">
                   Replace
                 </button>
-                <button className="py-2 rounded-xl bg-sky/10 text-sky border border-sky/20 text-[9px] font-black uppercase">
-                  Form Tips
-                </button>
+                <button
+  onClick={() => setShowTipsFor(ex.name)}
+  className="py-2 rounded-xl bg-sky/10 text-sky border border-sky/20 text-[9px] font-black uppercase"
+>
+  Form Tips
+</button>
               </div>
             </div>
           ))}
