@@ -184,6 +184,15 @@ export default function WorkoutView({
   const [showCustomForm, setShowCustomForm] = useState(false);
 
   const [editingSetId, setEditingSetId] = useState<number | string | null>(null);
+  const setEditingSetIdSafe = (id: any) => {
+  try {
+    if (typeof setEditingSetId === "function") {
+      setEditingSetId(id);
+    }
+  } catch (e) {
+    console.warn("setEditingSetId not available", e);
+  }
+};
   const [editWeight, setEditWeight] = useState('');
   const [editReps, setEditReps] = useState('');
 
