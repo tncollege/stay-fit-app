@@ -1943,40 +1943,6 @@ function RestTimer({ time, setTime, isActive, setIsActive, reason }: any) {
   document.body.appendChild(el);
   window.setTimeout(() => el.remove(), 2600);
 
-function normalizeExerciseName(value: string) {
-  return String(value || '').replace(/\s*protocol$/i, '').trim();
-}
-
-function toExerciseTitle(value: string) {
-  return normalizeExerciseName(value)
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
-}
-
-function getLocalDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getSetVolume(set: any) {
-  const weight = Number(set?.weight || 0);
-  const reps = Number(set?.reps || 0);
-  return weight * reps;
-}
-
-function getWorkoutTotalVolume(sets: any[] = []) {
-  return sets.reduce((total, set) => total + getSetVolume(set), 0);
-}
-
-function getWorkoutDisplayName(w: any) {
-  if (!w) return '';
-  const name = String(w.name || '').trim();
-  if (w.category && w.category !== 'Strength') return name;
-
   const muscles: string[] = Array.isArray(w.muscles) ? w.muscles : [];
   const exercises = (w.sets || []).map((s: any) => String(s.exercise || '').toLowerCase());
 
