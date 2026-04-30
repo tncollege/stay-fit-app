@@ -1,205 +1,55 @@
-import React, { useState, useMemo } from 'react';
-import { AppData } from '../lib/types';
-import { Dumbbell, Plus } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Brain,
+  CheckCircle2,
+  Dumbbell,
+  Pause,
+  Play,
+  PlusCircle,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Timer,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { AppData, Workout } from '../lib/types';
+import { EXERCISE_DATABASE } from '../data/database';
+import { calculateRecoveryTime, searchExerciseInfo } from '../services/aiService';
+import DateNavigator from './DateNavigator';
+import {
+  deleteWorkoutFromCloud,
+  deleteWorkoutPlan,
+  loadWorkoutPlans,
+  saveCustomExercise,
+  saveWorkout,
+  saveWorkoutPlan,
+} from '../services/cloudDataService';
 
-export default function WorkoutView({ data, setData, viewDate }: any) {
+type Tab = 'strength' | 'cardio' | 'sports' | 'yoga';
 
-  const workouts = data.workouts[viewDate] || [];
-
-  const [exerciseName, setExerciseName] = useState('');
-  const [sets, setSets] = useState([{ id: Date.now(), reps: '', weight: '', completed: false }]);
-
-  const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
-
-  // --- ADD EXERCISE ---
-  const addExercise = () => {
-    if (!exerciseName) return;
-
-    const newWorkout = {
-      id: Date.now().toString(),
-      name: exerciseName,
-      sets: sets,
-      createdAt: Date.now(),
-    };
-
-    setData((prev: AppData) => ({
-      ...prev,
-      workouts: {
-        ...prev.workouts,
-        [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout],
-      },
-    }));
-
-    // reset
-    setExerciseName('');
-    setSets([{ id: Date.now(), reps: '', weight: '', completed: false }]);
-  };
-
-  // --- ADD SET ---
-  const addSet = () => {
-    setSets(prev => [
-      ...prev,
-      { id: Date.now(), reps: '', weight: '', completed: false }
-    ]);
-  };
-
-  // --- UPDATE SET ---
-  const updateSet = (id: number, field: string, value: string) => {
-    setSets(prev =>
-      prev.map(s =>
-        s.id === id ? { ...s, [field]: value } : s
-      )
-    );
-  };
-
-  // --- CONFIRM SET (NO CRASH VERSION) ---
-  const confirmSet = (workoutId: string, setId: number) => {
-
-    setData((prev: AppData) => ({
-      ...prev,
-      workouts: {
-        ...prev.workouts,
-        [viewDate]: (prev.workouts[viewDate] || []).map((w: any) => {
-          if (w.id !== workoutId) return w;
-
-          return {
-            ...w,
-            sets: w.sets.map((s: any) =>
-              s.id === setId ? { ...s, completed: true } : s
-            ),
-          };
-        }),
-      },
-    }));
-  };
-
-  // --- DELETE EXERCISE ---
-  const deleteWorkout = (id: string) => {
-    setData((prev: AppData) => ({
-      ...prev,
-      workouts: {
-        ...prev.workouts,
-        [viewDate]: (prev.workouts[viewDate] || []).filter((w: any) => w.id !== id),
-      },
-    }));
-  };
-
-  // --- TOTAL CALORIES ESTIMATE ---
-  const totalSets = workouts.reduce((acc: number, w: any) => acc + w.sets.length, 0);
-
-  return (
-    <div className="space-y-8">
-
-      {/* HEADER */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-black">Workout</h2>
-        <div className="text-xs opacity-40">{totalSets} sets logged</div>
-      </div>
-
-      {/* ADD EXERCISE */}
-      <div className="bg-panel p-4 rounded-2xl border border-border space-y-4">
-        
-        <input
-          value={exerciseName}
-          onChange={(e) => setExerciseName(e.target.value)}
-          placeholder="Exercise name (Bench Press)"
-          className="w-full p-4 bg-white/5 border border-border rounded-xl"
-        />
-
-        {sets.map((set, i) => (
-          <div key={set.id} className="flex gap-2">
-            
-            <input
-              placeholder="Reps"
-              value={set.reps}
-              onChange={(e) => updateSet(set.id, 'reps', e.target.value)}
-              className="w-full p-3 bg-white/5 rounded"
-            />
-
-            <input
-              placeholder="Weight"
-              value={set.weight}
-              onChange={(e) => updateSet(set.id, 'weight', e.target.value)}
-              className="w-full p-3 bg-white/5 rounded"
-            />
-
-          </div>
-        ))}
-
-        <div className="flex gap-2">
-          <button onClick={addSet} className="btn-small">
-            + Add Set
-          </button>
-
-          <button onClick={addExercise} className="bg-lime text-dark px-4 py-2 rounded-xl font-bold">
-            Save Exercise
-          </button>
-        </div>
-
-      </div>
-
-      {/* WORKOUT LIST */}
-      {workouts.map((w: any) => (
-        <div key={w.id} className="bg-panel p-4 rounded-2xl border border-border">
-
-          <div className="flex justify-between">
-            <div className="font-bold">{w.name}</div>
-
-            <button
-              onClick={() => deleteWorkout(w.id)}
-              className="text-red text-xs"
-            >
-              Delete
-            </button>
-          </div>
-
-          {/* SETS */}
-          <div className="mt-3 space-y-2">
-            {w.sets.map((s: any) => (
-              <div key={s.id} className="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-
-                <div className="text-sm">
-                  {s.reps} reps × {s.weight} kg
-                </div>
-
-                <button
-                  onClick={() => confirmSet(w.id, s.id)}
-                  className={`px-3 py-1 text-xs rounded ${
-                    s.completed
-                      ? 'bg-lime text-dark'
-                      : 'bg-white/10'
-                  }`}
-                >
-                  {s.completed ? 'Done' : 'Confirm'}
-                </button>
-
-              </div>
-            ))}
-          </div>
-
-        </div>
-      ))}
-
-      {/* FLOAT ADD */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-24 right-6 bg-lime text-dark px-6 py-4 rounded-2xl shadow-xl font-black"
-      >
-        <Plus />
-      </button>
-
-    </div>
-  );
-}  Arms: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=600&auto=format&fit=crop',
+const CATEGORY_IMAGES: Record<string, string> = {
+  Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
+  Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
+  Legs: 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?q=80&w=600&auto=format&fit=crop',
+  Shoulders: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?q=80&w=600&auto=format&fit=crop',
+  Arms: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=600&auto=format&fit=crop',
   Core: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=600&auto=format&fit=crop',
   Cardio: 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?q=80&w=600&auto=format&fit=crop',
   Sports: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?q=80&w=600&auto=format&fit=crop',
   Yoga: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=600&auto=format&fit=crop',
 };
 
+const BODY_PARTS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'];
+
+function safeId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function showWorkoutMessage(message: string, tone: 'success' | 'error' = 'success') {
   if (typeof document === 'undefined') return;
-
   const existing = document.getElementById('stayfitinlife-workout-toast');
   if (existing) existing.remove();
 
@@ -236,12 +86,8 @@ function getLocalDateKey(date: Date) {
 
 function getWorkoutDisplayName(w: any) {
   if (!w) return '';
-
   const name = String(w.name || '').trim();
-
-  if (w.category && w.category !== 'Strength') {
-    return name;
-  }
+  if (w.category && w.category !== 'Strength') return name;
 
   const muscles: string[] = Array.isArray(w.muscles) ? w.muscles : [];
   const exercises = (w.sets || []).map((s: any) => String(s.exercise || '').toLowerCase());
@@ -249,38 +95,24 @@ function getWorkoutDisplayName(w: any) {
   const hasBack =
     muscles.includes('Back') ||
     exercises.some((e: string) => e.includes('row') || e.includes('pulldown') || e.includes('pull'));
-
   const hasBiceps =
     muscles.includes('Arms') ||
     exercises.some((e: string) => e.includes('curl') || e.includes('bicep'));
-
   const hasChest =
     muscles.includes('Chest') ||
     exercises.some((e: string) => e.includes('bench') || e.includes('chest') || e.includes('fly'));
-
   const hasShoulders =
     muscles.includes('Shoulders') ||
     exercises.some((e: string) => e.includes('shoulder') || e.includes('raise'));
-
   const hasTriceps =
     exercises.some((e: string) => e.includes('tricep') || e.includes('pushdown') || e.includes('extension'));
-
   const hasLegs =
     muscles.includes('Legs') ||
     exercises.some((e: string) => e.includes('squat') || e.includes('leg') || e.includes('lunge'));
 
-  const genericNames = [
-    'Arms Workout',
-    'Chest Workout',
-    'Back Workout',
-    'Legs Workout',
-    'Shoulders Workout',
-    'Core Workout',
-  ];
+  const genericNames = ['Arms Workout', 'Chest Workout', 'Back Workout', 'Legs Workout', 'Shoulders Workout', 'Core Workout'];
 
-  // Preserve user-entered names like Pull Workout, Push Workout, Upper Body, etc.
   if (name && !genericNames.includes(name)) return name;
-
   if (hasBack && hasBiceps) return 'Pull Workout';
   if ((hasChest || hasShoulders) && hasTriceps) return 'Push Workout';
   if (hasLegs) return 'Legs Workout';
@@ -290,12 +122,10 @@ function getWorkoutDisplayName(w: any) {
 
 function getDynamicCardioMetric(value: string) {
   const ex = value.toLowerCase();
-  if (ex.includes('treadmill')) return 'Incline (%)';
-  if (ex.includes('cycling') || ex.includes('bike')) return 'Resistance';
-  if (ex.includes('rowing')) return 'Resistance';
+  if (ex.includes('treadmill') || ex.includes('walking')) return 'Incline (%)';
+  if (ex.includes('cycling') || ex.includes('bike') || ex.includes('rowing')) return 'Resistance';
   if (ex.includes('stair') || ex.includes('climber')) return 'Floors';
   if (ex.includes('running')) return 'Avg Heart Rate';
-  if (ex.includes('walking')) return 'Incline (%)';
   if (ex.includes('hiit')) return 'Intensity (1-10)';
   if (ex.includes('jump rope')) return 'Rounds';
   return '';
@@ -374,7 +204,7 @@ export default function WorkoutView({
   const [planExerciseInput, setPlanExerciseInput] = useState('');
   const [planBodyPartInput, setPlanBodyPartInput] = useState('Chest');
 
-  const workoutsArr = data.workouts[viewDate] || [];
+  const workoutsArr = data.workouts?.[viewDate] || [];
   const personalExercises = data.personalExercises || [];
 
   const yesterdayKey = useMemo(() => {
@@ -383,7 +213,7 @@ export default function WorkoutView({
     return getLocalDateKey(d);
   }, [viewDate]);
 
-  const yesterdayWorkouts = data.workouts[yesterdayKey] || [];
+  const yesterdayWorkouts = data.workouts?.[yesterdayKey] || [];
   const currentPlanDraft = workoutPlans[editingPlanDay] || {
     dayOfWeek: editingPlanDay,
     planName: '',
@@ -421,7 +251,6 @@ export default function WorkoutView({
 
   const getExerciseOptions = (category: string, subcategory?: string) => {
     let fromBase: string[] = [];
-
     if (subcategory) {
       fromBase = (EXERCISE_DATABASE as any)[category]?.[subcategory] || [];
     } else {
@@ -449,23 +278,8 @@ export default function WorkoutView({
   const suggestedRepsForExercise = (name: string, bodyPart?: string) => {
     const lower = name.toLowerCase();
     if (bodyPart === 'Core') return '12–20';
-    if (
-      lower.includes('curl') ||
-      lower.includes('raise') ||
-      lower.includes('extension') ||
-      lower.includes('fly')
-    ) {
-      return '10–15';
-    }
-    if (
-      lower.includes('deadlift') ||
-      lower.includes('squat') ||
-      lower.includes('bench') ||
-      lower.includes('press') ||
-      lower.includes('row')
-    ) {
-      return '6–10';
-    }
+    if (lower.includes('curl') || lower.includes('raise') || lower.includes('extension') || lower.includes('fly')) return '10–15';
+    if (lower.includes('deadlift') || lower.includes('squat') || lower.includes('bench') || lower.includes('press') || lower.includes('row')) return '6–10';
     return '8–10';
   };
 
@@ -512,29 +326,16 @@ export default function WorkoutView({
     }
 
     setSavingPlan(true);
-
     try {
       await saveWorkoutPlan(plan);
-
-      setWorkoutPlans((prev) => ({
-        ...prev,
-        [editingPlanDay]: plan,
-      }));
-
+      setWorkoutPlans((prev) => ({ ...prev, [editingPlanDay]: plan }));
       showWorkoutMessage('Weekly plan saved successfully');
-
       setPlanEditorOpen(false);
       setEditingPlanDay(todayName);
       setPlanNameInput('');
       setPlanExerciseInput('');
       setPlanBodyPartInput('Chest');
       setActiveTab('strength');
-
-      window.setTimeout(() => {
-        document
-          .querySelector('[data-weekly-plan-section]')
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 150);
     } catch (err) {
       console.error('Workout plan save failed', err);
       showWorkoutMessage('Unable to save weekly plan. Please try again.', 'error');
@@ -562,7 +363,6 @@ export default function WorkoutView({
 
   const startTodayPlan = () => {
     if (!todayPlan) return;
-
     setWorkoutName(todayPlan.planName || todayName + ' Workout');
 
     const first = todayPlan.exercises?.[0];
@@ -586,19 +386,22 @@ export default function WorkoutView({
       reps,
       rpe,
       muscle: selectedMuscle,
-      id: crypto.randomUUID(),
+      id: safeId(),
     };
 
     setCurrentSets((prev) => [...prev, newSet]);
 
     setTimerActive(false);
-    const recoveryWeight = finalWeight === '0' ? 'bodyweight' : `${finalWeight}kg`;
-    const recovery = await calculateRecoveryTime(finalExercise, recoveryWeight, reps);
-
-    if (recovery) {
-      setTimerTime(recovery.seconds);
-      setRecoveryReason(recovery.reason);
-      setTimerActive(true);
+    try {
+      const recoveryWeight = finalWeight === '0' ? 'bodyweight' : `${finalWeight}kg`;
+      const recovery = await calculateRecoveryTime(finalExercise, recoveryWeight, reps);
+      if (recovery) {
+        setTimerTime(recovery.seconds);
+        setRecoveryReason(recovery.reason);
+        setTimerActive(true);
+      }
+    } catch (err) {
+      console.error('Recovery timer failed', err);
     }
 
     setWeight('');
@@ -607,12 +410,10 @@ export default function WorkoutView({
 
   const handleAiSearch = async () => {
     if (!searchQuery) return;
-
     setAiSearching(true);
 
     try {
       const result = await searchExerciseInfo(searchQuery);
-
       if (result) {
         const fixedName = toExerciseTitle(result.name || searchQuery);
         const fixedResult = { ...result, name: fixedName };
@@ -626,6 +427,7 @@ export default function WorkoutView({
             ...prev,
             personalExercises: [...(prev.personalExercises || []), fixedResult],
           }));
+
           saveCustomExercise({
             ...fixedResult,
             bodyPart: fixedResult.bodyPart || 'Chest',
@@ -644,6 +446,9 @@ export default function WorkoutView({
 
         setSearchQuery('');
       }
+    } catch (err) {
+      console.error('AI exercise search failed', err);
+      showWorkoutMessage('AI search failed. Try manual entry.', 'error');
     } finally {
       setAiSearching(false);
     }
@@ -665,10 +470,7 @@ export default function WorkoutView({
   const handleAddCustomExercise = () => {
     if (!customExercise.name) return;
 
-    const fixedCustom = {
-      ...customExercise,
-      name: toExerciseTitle(customExercise.name),
-    };
+    const fixedCustom = { ...customExercise, name: toExerciseTitle(customExercise.name) };
 
     setData((prev: AppData) => ({
       ...prev,
@@ -694,10 +496,8 @@ export default function WorkoutView({
 
   const addWorkoutToStateAndCloud = async (newWorkout: Workout) => {
     setSavingWorkout(true);
-
     try {
       await saveWorkout(viewDate, newWorkout);
-
       setData((prev: AppData) => ({
         ...prev,
         workouts: {
@@ -721,12 +521,12 @@ export default function WorkoutView({
   const handleAddCardio = async () => {
     if (!cardioExercise || !cardioDuration) return;
 
-    const durationNum = parseInt(cardioDuration);
+    const durationNum = parseInt(cardioDuration, 10);
     const calories = durationNum * 8;
     const extraParam = cardioExtraMetric && cardioExtraValue ? { [cardioExtraMetric]: cardioExtraValue } : {};
 
     const newWorkout: Workout = {
-      id: crypto.randomUUID(),
+      id: safeId(),
       name: `${toExerciseTitle(cardioExercise)} Session`,
       category: 'Cardio',
       muscles: ['Cardio'],
@@ -743,7 +543,6 @@ export default function WorkoutView({
     };
 
     await addWorkoutToStateAndCloud(newWorkout);
-
     setCardioExercise('');
     setCardioDuration('');
     setCardioDistance('');
@@ -754,20 +553,17 @@ export default function WorkoutView({
   const handleFinishWorkout = async () => {
     if (currentSets.length === 0) return;
 
-    const workoutMuscles = Array.from(
-      new Set(currentSets.map((s: any) => s.muscle || selectedMuscle).filter(Boolean))
-    );
+    const workoutMuscles = Array.from(new Set(currentSets.map((s: any) => s.muscle || selectedMuscle).filter(Boolean)));
 
     const autoWorkoutName =
       workoutMuscles.length > 1
         ? `${workoutMuscles.join(' + ')} Workout`
         : `${workoutMuscles[0] || selectedMuscle} Workout`;
 
-    const finalWorkoutName =
-      workoutName && workoutName.trim().length > 1 ? workoutName.trim() : autoWorkoutName;
+    const finalWorkoutName = workoutName && workoutName.trim().length > 1 ? workoutName.trim() : autoWorkoutName;
 
     const newWorkout: Workout = {
-      id: crypto.randomUUID(),
+      id: safeId(),
       name: finalWorkoutName,
       category: 'Strength',
       muscles: workoutMuscles.length ? workoutMuscles : [selectedMuscle],
@@ -776,7 +572,6 @@ export default function WorkoutView({
     };
 
     await addWorkoutToStateAndCloud(newWorkout);
-
     setCurrentSets([]);
     setExercise('');
     setWorkoutName('');
@@ -788,10 +583,10 @@ export default function WorkoutView({
   const handleAddSportsOrYoga = async (category: 'Sports' | 'Yoga') => {
     if (!cardioExercise || !cardioDuration) return;
 
-    const durationNum = parseInt(cardioDuration);
+    const durationNum = parseInt(cardioDuration, 10);
 
     const newWorkout: Workout = {
-      id: crypto.randomUUID(),
+      id: safeId(),
       name: `${toExerciseTitle(cardioExercise)} Session`,
       category,
       muscles: [category],
@@ -801,7 +596,6 @@ export default function WorkoutView({
     };
 
     await addWorkoutToStateAndCloud(newWorkout);
-
     setCardioExercise('');
     setCardioDuration('');
   };
@@ -811,7 +605,7 @@ export default function WorkoutView({
       ...prev,
       workouts: {
         ...prev.workouts,
-        [viewDate]: (prev.workouts[viewDate] || []).filter((w) => w.id !== id),
+        [viewDate]: (prev.workouts[viewDate] || []).filter((w: any) => w.id !== id),
       },
     }));
 
@@ -842,7 +636,7 @@ export default function WorkoutView({
       setCardioDuration(String(s.duration || ''));
       setActiveTab('yoga');
     } else {
-      setCurrentSets(workout.sets);
+      setCurrentSets(workout.sets || []);
       setSelectedMuscle(workout.muscles?.[0] || 'Chest');
       setWorkoutName(workout.name || '');
       setActiveTab('strength');
@@ -854,7 +648,7 @@ export default function WorkoutView({
   const handleDeletePersonalExercise = (name: string) => {
     setData((prev: AppData) => ({
       ...prev,
-      personalExercises: (prev.personalExercises || []).filter((e) => e.name !== name),
+      personalExercises: (prev.personalExercises || []).filter((e: any) => e.name !== name),
     }));
   };
 
@@ -953,6 +747,7 @@ export default function WorkoutView({
                   setWorkoutName={setWorkoutName}
                   handleFinishWorkout={handleFinishWorkout}
                   savingWorkout={savingWorkout}
+                  setEditingSetId={setEditingSetId}
                 />
               ) : activeTab === 'cardio' ? (
                 <CardioPanel
@@ -1184,15 +979,7 @@ function WeeklyPlanSection(props: any) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="label-small text-muted ml-1">Workout Name</div>
-              <input
-                value={planNameInput}
-                onChange={(e) => setPlanNameInput(e.target.value)}
-                className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-                placeholder="Push, Pull, Upper Body..."
-              />
-            </div>
+            <InputText label="Workout Name" value={planNameInput} onChange={setPlanNameInput} placeholder="Push, Pull, Upper Body..." />
             <div className="space-y-2">
               <div className="label-small text-muted ml-1">Body Part</div>
               <select
@@ -1203,7 +990,7 @@ function WeeklyPlanSection(props: any) {
                 }}
                 className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
               >
-                {['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'].map((m) => (
+                {BODY_PARTS.map((m) => (
                   <option key={m} value={m} className="bg-dark">
                     {m}
                   </option>
@@ -1213,13 +1000,7 @@ function WeeklyPlanSection(props: any) {
           </div>
 
           <div className="space-y-3">
-            <div className="label-small text-muted ml-1">Add Exercise</div>
-            <input
-              value={planExerciseInput}
-              onChange={(e) => setPlanExerciseInput(e.target.value)}
-              className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-              placeholder="Type or choose exercise..."
-            />
+            <InputText label="Add Exercise" value={planExerciseInput} onChange={setPlanExerciseInput} placeholder="Type or choose exercise..." />
             <div className="max-h-40 overflow-y-auto space-y-2 custom-scrollbar">
               {getExerciseOptions(planBodyPartInput)
                 .filter((e: string) => !planExerciseInput || e.toLowerCase().includes(planExerciseInput.toLowerCase()))
@@ -1308,6 +1089,7 @@ function StrengthPanel(props: any) {
     setWorkoutName,
     handleFinishWorkout,
     savingWorkout,
+    setEditingSetId,
   } = props;
 
   return (
@@ -1315,44 +1097,38 @@ function StrengthPanel(props: any) {
       <div>
         <div className="label-small text-muted mb-4 ml-1">Target Muscle Group</div>
         <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
-          {Object.keys(EXERCISE_DATABASE)
-            .filter((k) => Array.isArray((EXERCISE_DATABASE as any)[k]))
-            .map((m) => (
-              <button
-                key={m}
-                onClick={() => {
-                  setSelectedMuscle(m);
-                  setExercise('');
-                }}
-                className={`relative shrink-0 w-28 h-36 rounded-2xl overflow-hidden border transition-all active:scale-95 group ${
-                  selectedMuscle === m
-                    ? 'border-lime shadow-[0_0_20px_rgba(215,255,0,0.2)]'
-                    : 'border-border/50 opacity-40 hover:opacity-100 hover:border-lime/30'
-                }`}
-              >
-                <img
-                  src={CATEGORY_IMAGES[m]}
-                  alt={m}
-                  referrerPolicy="no-referrer"
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          {BODY_PARTS.map((m) => (
+            <button
+              key={m}
+              onClick={() => {
+                setSelectedMuscle(m);
+                setExercise('');
+              }}
+              className={`relative shrink-0 w-28 h-36 rounded-2xl overflow-hidden border transition-all active:scale-95 group ${
+                selectedMuscle === m
+                  ? 'border-lime shadow-[0_0_20px_rgba(215,255,0,0.2)]'
+                  : 'border-border/50 opacity-40 hover:opacity-100 hover:border-lime/30'
+              }`}
+            >
+              <img
+                src={CATEGORY_IMAGES[m]}
+                alt={m}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+              <div className="absolute inset-0 flex flex-col justify-end p-3 text-left">
+                <div
+                  className={`w-1.5 h-1.5 rounded-full mb-1 transition-all ${
+                    selectedMuscle === m ? 'bg-lime shadow-[0_0_8px_rgba(215,255,0,1)]' : 'bg-white/20'
+                  }`}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                <div className="absolute inset-0 flex flex-col justify-end p-3 text-left">
-                  <div
-                    className={`w-1.5 h-1.5 rounded-full mb-1 transition-all ${
-                      selectedMuscle === m ? 'bg-lime shadow-[0_0_8px_rgba(215,255,0,1)]' : 'bg-white/20'
-                    }`}
-                  />
-                  <div
-                    className={`text-[10px] font-black uppercase tracking-widest ${
-                      selectedMuscle === m ? 'text-lime' : 'text-white/60'
-                    }`}
-                  >
-                    {m}
-                  </div>
+                <div className={`text-[10px] font-black uppercase tracking-widest ${selectedMuscle === m ? 'text-lime' : 'text-white/60'}`}>
+                  {m}
                 </div>
-              </button>
-            ))}
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1398,9 +1174,7 @@ function StrengthPanel(props: any) {
               >
                 <div className="text-[10px] font-black text-lime uppercase tracking-widest mb-1">Selected Exercise</div>
                 <div className="text-sm font-bold text-white/90">{exercise}</div>
-                <p className="text-[10px] text-white/30 mt-1">
-                  Log your working sets below. Image previews were removed so exercise names stay accurate.
-                </p>
+                <p className="text-[10px] text-white/30 mt-1">Log your working sets below.</p>
               </motion.div>
             )}
           </div>
@@ -1410,10 +1184,7 @@ function StrengthPanel(props: any) {
               {personalExercises
                 .filter((e: any) => e.bodyPart === selectedMuscle)
                 .map((e: any) => (
-                  <div
-                    key={e.name}
-                    className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[9px] uppercase font-bold tracking-wider"
-                  >
+                  <div key={e.name} className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[9px] uppercase font-bold tracking-wider">
                     <span className="text-white/60">{e.name}</span>
                     <button onClick={() => handleDeletePersonalExercise(e.name)} className="text-white/20 hover:text-pink transition-colors">
                       <X size={10} />
@@ -1487,6 +1258,20 @@ function StrengthPanel(props: any) {
   );
 }
 
+function InputText({ label, value, onChange, placeholder }: any) {
+  return (
+    <div className="space-y-2">
+      <div className="label-small text-muted ml-1">{label}</div>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
 function InputBlock({ label, value, onChange, placeholder }: any) {
   return (
     <div className="space-y-2">
@@ -1551,15 +1336,7 @@ function ActiveSets(props: any) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="space-y-4 mb-6">
-        <div>
-          <div className="label-small text-muted mb-2 ml-1">Workout Name</div>
-          <input
-            value={workoutName}
-            onChange={(e) => setWorkoutName(e.target.value)}
-            className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-            placeholder="Push, Pull, Upper Body, Full Body..."
-          />
-        </div>
+        <InputText label="Workout Name" value={workoutName} onChange={setWorkoutName} placeholder="Push, Pull, Upper Body, Full Body..." />
         <div className="flex justify-between items-center">
           <div className="label-small text-lime">Active Bio-Calibration Session</div>
           <button
@@ -1574,10 +1351,7 @@ function ActiveSets(props: any) {
 
       <div className="space-y-2">
         {currentSets.map((s: any, idx: number) => (
-          <div
-            key={s.id}
-            className="flex justify-between items-center p-5 bg-white/[0.02] border border-border rounded-2xl group hover:border-lime/30 transition-all"
-          >
+          <div key={s.id} className="flex justify-between items-center p-5 bg-white/[0.02] border border-border rounded-2xl group hover:border-lime/30 transition-all">
             {editingSetId === s.id ? (
               <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-4">
                 <div className="flex-1">
@@ -1614,11 +1388,7 @@ function ActiveSets(props: any) {
                   <div className="flex items-center gap-2 mt-1">
                     <div className="label-small opacity-30">Set {idx + 1}</div>
                     {s.rpe && (
-                      <div
-                        className={`px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase ${
-                          Number(s.rpe) >= 9 ? 'bg-pink/20 text-pink' : 'bg-lime/20 text-lime'
-                        }`}
-                      >
+                      <div className={`px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase ${Number(s.rpe) >= 9 ? 'bg-pink/20 text-pink' : 'bg-lime/20 text-lime'}`}>
                         RPE {s.rpe}
                       </div>
                     )}
@@ -1698,15 +1468,7 @@ function CardioPanel(props: any) {
           ))}
         </div>
 
-        <div className="space-y-2">
-          <div className="label-small text-muted ml-1">Manual Selection / Search Override</div>
-          <input
-            value={cardioExercise}
-            onChange={(e) => setCardioExercise(toExerciseTitle(e.target.value))}
-            className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-            placeholder="Select or type cardio..."
-          />
-        </div>
+        <InputText label="Manual Selection / Search Override" value={cardioExercise} onChange={(v: string) => setCardioExercise(toExerciseTitle(v))} placeholder="Select or type cardio..." />
       </div>
 
       <div
@@ -1718,16 +1480,7 @@ function CardioPanel(props: any) {
               : 'grid-cols-1'
         }`}
       >
-        <div className="space-y-2">
-          <div className="label-small text-muted ml-1">Duration (Min)</div>
-          <input
-            type="number"
-            value={cardioDuration}
-            onChange={(e) => setCardioDuration(e.target.value)}
-            className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-black focus:outline-none focus:border-lime transition-all"
-            placeholder="30"
-          />
-        </div>
+        <InputBlock label="Duration (Min)" value={cardioDuration} onChange={setCardioDuration} placeholder="30" />
 
         {shouldShowDistance(cardioExercise) && (
           <div className="space-y-2">
@@ -1827,16 +1580,7 @@ function SportsYogaPanel(props: any) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <div className="label-small text-muted ml-1">Duration (Min)</div>
-          <input
-            type="number"
-            value={cardioDuration}
-            onChange={(e) => setCardioDuration(e.target.value)}
-            className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-black focus:outline-none focus:border-lime transition-all"
-            placeholder={mode === 'Sports' ? '60' : '45'}
-          />
-        </div>
+        <InputBlock label="Duration (Min)" value={cardioDuration} onChange={setCardioDuration} placeholder={mode === 'Sports' ? '60' : '45'} />
         <div className="flex items-end">
           <button
             onClick={handleSubmit}
@@ -1863,10 +1607,7 @@ function WorkoutHistory({ workoutsArr, handleEditWorkout, handleDeleteWorkout }:
       ) : (
         <div className="space-y-3">
           {workoutsArr.map((w: any, idx: number) => (
-            <div
-              key={w.id || idx}
-              className="p-5 bg-white/[0.02] border border-border rounded-2xl space-y-3 group/session transition-all hover:border-white/10"
-            >
+            <div key={w.id || idx} className="p-5 bg-white/[0.02] border border-border rounded-2xl space-y-3 group/session transition-all hover:border-white/10">
               <div className="flex justify-between items-center gap-4">
                 <div>
                   <p className="font-bold text-sm tracking-tight">{w.name}</p>
@@ -1891,8 +1632,8 @@ function WorkoutHistory({ workoutsArr, handleEditWorkout, handleDeleteWorkout }:
               </div>
 
               <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest opacity-40">
-                <span>{w.sets.length} total units</span>
-                <span className="text-lime">{w.caloriesBurned} kcal net</span>
+                <span>{w.sets?.length || 0} total units</span>
+                <span className="text-lime">{w.caloriesBurned || 0} kcal net</span>
               </div>
             </div>
           ))}
@@ -1933,15 +1674,12 @@ function CustomExerciseModal(props: any) {
             <h3 className="text-3xl font-black mb-10">Add Custom Exercise</h3>
 
             <div className="space-y-5">
-              <div className="space-y-2">
-                <label className="label-small text-muted ml-1 uppercase opacity-40">Exercise Name</label>
-                <input
-                  value={customExercise.name}
-                  onChange={(e) => setCustomExercise({ ...customExercise, name: e.target.value })}
-                  placeholder="Enter exercise name..."
-                  className="w-full px-6 py-4 bg-white/[0.03] border border-border rounded-2xl text-lg font-bold focus:outline-none focus:border-pink transition-all"
-                />
-              </div>
+              <InputText
+                label="Exercise Name"
+                value={customExercise.name}
+                onChange={(v: string) => setCustomExercise({ ...customExercise, name: v })}
+                placeholder="Enter exercise name..."
+              />
 
               <div className="space-y-2">
                 <label className="label-small text-muted ml-1 uppercase opacity-40">Body Part</label>
@@ -1950,7 +1688,7 @@ function CustomExerciseModal(props: any) {
                   onChange={(e) => setCustomExercise({ ...customExercise, bodyPart: e.target.value })}
                   className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-pink transition-all appearance-none"
                 >
-                  {Object.keys(EXERCISE_DATABASE).map((m) => (
+                  {[...BODY_PARTS, 'Cardio'].map((m) => (
                     <option key={m} value={m} className="bg-dark">
                       {m}
                     </option>
@@ -1977,121 +1715,48 @@ function RestTimer({ time, setTime, isActive, setIsActive, reason }: any) {
 
   useEffect(() => {
     if (isActive && time > 0) {
-      timerRef.current = setInterval(() => {
-        setTime((prev: number) => prev - 1);
-      }, 1000);
-    } else if (time <= 0 && isActive) {
-      playAlert();
-
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Rest Finished!', {
-          body: 'Time for your next set!',
-          icon: '/favicon.ico',
-        });
-      }
-
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
+      timerRef.current = window.setInterval(() => setTime((t: number) => t - 1), 1000);
+    } else if (time <= 0) {
       setIsActive(false);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('StayFitInLife', { body: 'Rest complete. Start your next set.' });
+      }
     }
 
-    return () => clearInterval(timerRef.current);
-  }, [isActive, time, setIsActive, setTime]);
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+    };
+  }, [isActive, time, setTime, setIsActive]);
 
-  const playAlert = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
-
-      gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1);
-
-      oscillator.start(audioCtx.currentTime);
-      oscillator.stop(audioCtx.currentTime + 1);
-    } catch (e) {
-      console.error('Audio alert failed', e);
-    }
-  };
-
-  const formatTime = (s: number) => {
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const reset = () => {
+    setIsActive(false);
+    setTime(60);
   };
 
   return (
-    <div className="stat-card text-center relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-white/5 overflow-hidden">
-        <motion.div
-          initial={{ x: '-100%' }}
-          animate={isActive ? { x: '100%' } : { x: '-100%' }}
-          transition={{ duration: time, ease: 'linear' }}
-          className="w-full h-full bg-lime shadow-[0_0_10px_rgba(215,255,0,0.8)]"
-        />
+    <div className="stat-card">
+      <div className="flex items-center gap-3 mb-6">
+        <Timer size={18} className="text-lime" />
+        <h3 className="label-small text-lime">Recovery Timer</h3>
       </div>
 
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="label-small text-sky">Neural Recovery</h3>
-        <Timer className="text-sky opacity-40" size={18} />
+      <div className="text-5xl font-black font-mono tracking-tighter">
+        {Math.floor(time / 60)}:{String(time % 60).padStart(2, '0')}
       </div>
 
-      {reason && (
-        <motion.div
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6 px-4 py-2 bg-sky/5 rounded-xl border border-sky/10 inline-block"
-        >
-          <p className="text-[9px] font-black uppercase tracking-widest text-sky">{reason}</p>
-        </motion.div>
-      )}
+      {reason && <p className="text-[10px] text-white/40 mt-3 leading-relaxed">{reason}</p>}
 
-      <div className="text-6xl font-black mb-10 font-mono tracking-tighter text-white/90">{formatTime(time)}</div>
-
-      <div className="flex justify-center gap-4">
+      <div className="flex gap-3 mt-6">
         <button
           onClick={() => setIsActive(!isActive)}
-          className={`px-8 py-5 rounded-2xl flex-1 flex items-center justify-center transition-all ${
-            isActive ? 'bg-pink/10 text-pink border border-pink/20' : 'bg-lime text-dark shadow-xl shadow-lime/20'
-          }`}
+          className="flex-1 py-3 rounded-xl bg-lime text-dark font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
         >
-          {isActive ? <Pause size={20} /> : <Play size={20} />}
+          {isActive ? <Pause size={14} /> : <Play size={14} />}
+          {isActive ? 'Pause' : 'Start'}
         </button>
-
-        <button
-          onClick={() => {
-            setIsActive(false);
-            setTime(60);
-          }}
-          className="p-5 bg-white/[0.03] border border-border rounded-2xl text-muted hover:text-white transition-all"
-        >
-          <RotateCcw size={20} />
+        <button onClick={reset} className="px-4 rounded-xl bg-white/5 border border-border text-white/50 hover:text-white">
+          <RotateCcw size={14} />
         </button>
-      </div>
-
-      <div className="flex gap-2 mt-8">
-        {[45, 60, 90, 120, 180, 300].map((s) => (
-          <button
-            key={s}
-            onClick={() => {
-              setTime(s);
-              setIsActive(false);
-            }}
-            className={`flex-1 py-3 rounded-xl text-[9px] font-black tracking-widest uppercase border transition-all ${
-              time === s
-                ? 'border-lime text-lime bg-lime/10 shadow-[0_0_10px_rgba(215,255,0,0.1)]'
-                : 'border-border text-white/20 hover:text-white/40'
-            }`}
-          >
-            {s < 60 ? `${s}s` : `${s / 60}m`}
-          </button>
-        ))}
       </div>
     </div>
   );
