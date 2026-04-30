@@ -1393,100 +1393,120 @@ function ActiveSets(props: any) {
   } = props;
 
   return (
-    <div className="space-y-4">
-      {/* Workout Name */}
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="space-y-4 mb-6">
         <div>
-          <div className="text-xs opacity-50 mb-2">Workout Name</div>
+          <div className="label-small text-muted mb-2 ml-1">Workout Name</div>
           <input
             value={workoutName}
             onChange={(e) => setWorkoutName(e.target.value)}
-            className="w-full p-4 bg-black border rounded-xl"
-            placeholder="Push / Pull / Legs"
+            className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
+            placeholder="Push, Pull, Upper Body, Full Body..."
           />
         </div>
-
-        <button
-          onClick={handleFinishWorkout}
-          disabled={savingWorkout}
-          className="w-full py-3 bg-lime text-black rounded-xl font-bold"
-        >
-          {savingWorkout ? "Saving..." : "Finish Workout"}
-        </button>
+        <div className="flex justify-between items-center">
+          <div className="label-small text-lime">Active Bio-Calibration Session</div>
+          <button
+            onClick={handleFinishWorkout}
+            disabled={savingWorkout}
+            className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {savingWorkout ? 'Saving...' : 'Submit Session'}
+          </button>
+        </div>
       </div>
 
-      {/* Sets */}
-      {currentSets.map((s: any, idx: number) => (
-        <div
-          key={s.id}
-          className="p-4 border rounded-xl flex justify-between items-center"
-        >
-          {editingSetId === s.id ? (
-            <div className="flex gap-2 items-center w-full">
-              <input
-                value={editWeight}
-                onChange={(e) => setEditWeight(e.target.value)}
-                className="w-20 p-2 border rounded"
-              />
-              <input
-                value={editReps}
-                onChange={(e) => setEditReps(e.target.value)}
-                className="w-20 p-2 border rounded"
-              />
-
-              {/* SAVE */}
-              <button
-                onClick={() => handleUpdateSet(s.id)}
-                className="bg-lime px-3 py-2 rounded"
-              >
-                ✔
-              </button>
-
-              {/* CANCEL (FIXED) */}
-              <button
-                onClick={() => setEditingSetId(null)}
-                className="bg-gray-700 px-3 py-2 rounded"
-              >
-                ✖
-              </button>
-            </div>
-          ) : (
-            <>
-              <div>
-                <div className="font-bold">{s.exercise}</div>
-                <div className="text-xs opacity-60">
-                  {s.weight} kg × {s.reps}
+      <div className="space-y-2">
+        {currentSets.map((s: any, idx: number) => (
+          <div
+            key={s.id}
+            className="flex justify-between items-center p-5 bg-white/[0.02] border border-border rounded-2xl group hover:border-lime/30 transition-all"
+          >
+            {editingSetId === s.id ? (
+              <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex-1">
+                  <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
+                  <div className="label-small opacity-30 mt-1">Editing Calibration {idx + 1}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={editWeight}
+                    onChange={(e) => setEditWeight(e.target.value)}
+                    className="w-20 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
+                    placeholder="0"
+                  />
+                  <input
+                    type="number"
+                    value={editReps}
+                    onChange={(e) => setEditReps(e.target.value)}
+                    className="w-16 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
+                    placeholder="Reps"
+                  />
+                  <button onClick={() => handleUpdateSet(s.id)} className="p-2 bg-lime text-dark rounded-lg hover:bg-lime/80 transition-all">
+                    <CheckCircle2 size={14} />
+                  </button>
+                  <button onClick={() => setEditingSetId(null)} className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white transition-all">
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
+            ) : (
+              <>
+                <div>
+                  <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="label-small opacity-30">Set {idx + 1}</div>
+                    {s.rpe && (
+                      <div
+                        className={`px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase ${
+                          Number(s.rpe) >= 9 ? 'bg-pink/20 text-pink' : 'bg-lime/20 text-lime'
+                        }`}
+                      >
+                        RPE {s.rpe}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-              <div className="flex gap-2">
-                {/* EDIT */}
-                <button
-                  onClick={() => handleStartEditingSet(s)}
-                  className="px-2 py-1 bg-blue-500 rounded"
-                >
-                  Edit
-                </button>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-xs font-black text-lime">
+                      {s.weight === '0' ? 'BW' : s.weight}
+                      {s.weight !== '0' && <span className="text-[10px] opacity-40 ml-1">KG</span>}
+                    </div>
+                    <div className="text-[10px] font-bold opacity-30">Load</div>
+                  </div>
+                  <div className="w-px h-6 bg-white/10" />
+                  <div className="text-right">
+                    <div className="text-xs font-black text-white">{s.reps}</div>
+                    <div className="text-[10px] font-bold opacity-30">Reps</div>
+                  </div>
 
-                {/* DELETE */}
-                <button
-                  onClick={() =>
-                    setCurrentSets(
-                      currentSets.filter((x: any) => x.id !== s.id)
-                    )
-                  }
-                  className="px-2 py-1 bg-red-500 rounded"
-                >
-                  Delete
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      ))}
-    </div>
+                  <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleStartEditingSet(s)}
+                      className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.35)] transition-all active:scale-95"
+                    >
+                      <Search size={14} />
+                    </button>
+                    <button
+                      onClick={() => setCurrentSets(currentSets.filter((x: any) => x.id !== s.id))}
+                      className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.35)] transition-all active:scale-95"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </motion.div>
   );
 }
+
 function CardioPanel(props: any) {
   const {
     cardioExercise,
