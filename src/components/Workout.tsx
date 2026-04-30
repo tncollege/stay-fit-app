@@ -1929,25 +1929,6 @@ function RestTimer({ time, setTime, isActive, setIsActive, reason }: any) {
     </div>
   );
 }
-
-const BODY_PARTS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'];
-
-const RPE_LABELS: Record<string, string> = {
-  '6': 'Easy',
-  '7': 'Moderate',
-  '8': 'Hard',
-  '9': 'Very Hard',
-  '10': 'Max',
-};
-
-function safeId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function showWorkoutMessage(message: string, tone: 'success' | 'error' = 'success') {
-  if (typeof document === 'undefined') return;
-
   const existing = document.getElementById('stayfitinlife-workout-toast');
   if (existing) existing.remove();
 
