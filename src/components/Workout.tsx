@@ -184,15 +184,6 @@ export default function WorkoutView({
   const [showCustomForm, setShowCustomForm] = useState(false);
 
   const [editingSetId, setEditingSetId] = useState<number | string | null>(null);
-  const setEditingSetIdSafe = (id: any) => {
-  try {
-    if (typeof setEditingSetId === "function") {
-      setEditingSetId(id);
-    }
-  } catch (e) {
-    console.warn("setEditingSetId not available", e);
-  }
-};
   const [editWeight, setEditWeight] = useState('');
   const [editReps, setEditReps] = useState('');
 
@@ -1386,6 +1377,7 @@ function RpeSelector({ rpe, setRpe }: any) {
 function ActiveSets(props: any) {
   const {
     currentSets,
+    setCurrentSets,
     editingSetId,
     editWeight,
     setEditWeight,
@@ -1397,125 +1389,104 @@ function ActiveSets(props: any) {
     setWorkoutName,
     handleFinishWorkout,
     savingWorkout,
+    setEditingSetId,
   } = props;
 
-  // ✅ SAFE FALLBACK (CRITICAL FIX)
-  const safeSetEditingSetId = (id: any) => {
-    if (props && typeof props.setEditingSetId === 'function') {
-      props.setEditingSetId(id);
-    }
-  };
-
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-      
+    <div className="space-y-4">
       {/* Workout Name */}
       <div className="space-y-4 mb-6">
         <div>
-          <div className="label-small text-muted mb-2 ml-1">Workout Name</div>
+          <div className="text-xs opacity-50 mb-2">Workout Name</div>
           <input
             value={workoutName}
             onChange={(e) => setWorkoutName(e.target.value)}
-            className="w-full p-4 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-            placeholder="Push, Pull, Upper Body..."
+            className="w-full p-4 bg-black border rounded-xl"
+            placeholder="Push / Pull / Legs"
           />
         </div>
 
-        <div className="flex justify-between items-center">
-          <div className="label-small text-lime">Active Session</div>
-          <button
-            onClick={handleFinishWorkout}
-            disabled={savingWorkout}
-            className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95"
-          >
-            {savingWorkout ? 'Saving...' : 'Submit Session'}
-          </button>
-        </div>
+        <button
+          onClick={handleFinishWorkout}
+          disabled={savingWorkout}
+          className="w-full py-3 bg-lime text-black rounded-xl font-bold"
+        >
+          {savingWorkout ? "Saving..." : "Finish Workout"}
+        </button>
       </div>
 
       {/* Sets */}
-      <div className="space-y-2">
-        {currentSets.map((s: any, idx: number) => (
-          <div
-            key={s.id}
-            className="flex justify-between items-center p-5 bg-white/[0.02] border border-border rounded-2xl"
-          >
-            {editingSetId != null && editingSetId === s.id ? (
-              <div className="flex-1 flex flex-col sm:flex-row gap-4">
+      {currentSets.map((s: any, idx: number) => (
+        <div
+          key={s.id}
+          className="p-4 border rounded-xl flex justify-between items-center"
+        >
+          {editingSetId === s.id ? (
+            <div className="flex gap-2 items-center w-full">
+              <input
+                value={editWeight}
+                onChange={(e) => setEditWeight(e.target.value)}
+                className="w-20 p-2 border rounded"
+              />
+              <input
+                value={editReps}
+                onChange={(e) => setEditReps(e.target.value)}
+                className="w-20 p-2 border rounded"
+              />
 
-                <div className="flex-1">
-                  <p className="font-bold text-sm">{s.exercise}</p>
-                  <div className="text-xs opacity-30">Editing Set {idx + 1}</div>
-                </div>
+              {/* SAVE */}
+              <button
+                onClick={() => handleUpdateSet(s.id)}
+                className="bg-lime px-3 py-2 rounded"
+              >
+                ✔
+              </button>
 
-                <div className="flex items-center gap-2">
-
-                  <input
-                    type="number"
-                    value={editWeight}
-                    onChange={(e) => setEditWeight(e.target.value)}
-                    className="w-20 p-2 bg-black border rounded-lg text-xs text-lime"
-                  />
-
-                  <input
-                    type="number"
-                    value={editReps}
-                    onChange={(e) => setEditReps(e.target.value)}
-                    className="w-16 p-2 bg-black border rounded-lg text-xs text-lime"
-                  />
-
-                  <button
-                    onClick={() => handleUpdateSet(s.id)}
-                    className="p-2 bg-lime text-dark rounded-lg"
-                  >
-                    <CheckCircle2 size={14} />
-                  </button>
-
-                  <button
-                    onClick={() => safeSetEditingSetId(null)} // ✅ SAFE
-                    className="p-2 bg-white/5 rounded-lg"
-                  >
-                    <X size={14} />
-                  </button>
-
+              {/* CANCEL (FIXED) */}
+              <button
+                onClick={() => setEditingSetId(null)}
+                className="bg-gray-700 px-3 py-2 rounded"
+              >
+                ✖
+              </button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <div className="font-bold">{s.exercise}</div>
+                <div className="text-xs opacity-60">
+                  {s.weight} kg × {s.reps}
                 </div>
               </div>
-            ) : (
-              <div className="flex justify-between w-full">
 
-                <div>
-                  <p className="font-bold text-sm">{s.exercise}</p>
-                  <p className="text-xs text-muted">
-                    {s.weight} kg × {s.reps}
-                  </p>
-                </div>
+              <div className="flex gap-2">
+                {/* EDIT */}
+                <button
+                  onClick={() => handleStartEditingSet(s)}
+                  className="px-2 py-1 bg-blue-500 rounded"
+                >
+                  Edit
+                </button>
 
-                <div className="flex gap-2">
-
-                  <button
-                    onClick={() => handleStartEditingSet(s)}
-                    className="p-2 bg-white/5 rounded-lg"
-                  >
-                    <RotateCcw size={14} />
-                  </button>
-
-                  <button
-                    onClick={() => safeSetEditingSetId(s.id)} // ✅ SAFE
-                    className="p-2 bg-white/5 rounded-lg"
-                  >
-                    <Play size={14} />
-                  </button>
-
-                </div>
+                {/* DELETE */}
+                <button
+                  onClick={() =>
+                    setCurrentSets(
+                      currentSets.filter((x: any) => x.id !== s.id)
+                    )
+                  }
+                  className="px-2 py-1 bg-red-500 rounded"
+                >
+                  Delete
+                </button>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </motion.div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
-
 function CardioPanel(props: any) {
   const {
     cardioExercise,
