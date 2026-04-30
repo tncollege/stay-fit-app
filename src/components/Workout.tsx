@@ -1942,7 +1942,6 @@ function RestTimer({ time, setTime, isActive, setIsActive, reason }: any) {
   }`;
   document.body.appendChild(el);
   window.setTimeout(() => el.remove(), 2600);
-}
 
 function normalizeExerciseName(value: string) {
   return String(value || '').replace(/\s*protocol$/i, '').trim();
