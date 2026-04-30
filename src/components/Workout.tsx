@@ -1,40 +1,196 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Brain,
-  CheckCircle2,
-  Dumbbell,
-  Pause,
-  Play,
-  PlusCircle,
-  RotateCcw,
-  Search,
-  Sparkles,
-  Timer,
-  Trash2,
-  X,
-} from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { AppData, Workout } from '../lib/types';
-import { EXERCISE_DATABASE } from '../data/database';
-import { calculateRecoveryTime, searchExerciseInfo } from '../services/aiService';
-import DateNavigator from './DateNavigator';
-import {
-  deleteWorkoutFromCloud,
-  deleteWorkoutPlan,
-  loadWorkoutPlans,
-  saveCustomExercise,
-  saveWorkout,
-  saveWorkoutPlan,
-} from '../services/cloudDataService';
+import React, { useState, useMemo } from 'react';
+import { AppData } from '../lib/types';
+import { Dumbbell, Plus } from 'lucide-react';
 
-type Tab = 'strength' | 'cardio' | 'sports' | 'yoga';
+export default function WorkoutView({ data, setData, viewDate }: any) {
 
-const CATEGORY_IMAGES: Record<string, string> = {
-  Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
-  Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
-  Legs: 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?q=80&w=600&auto=format&fit=crop',
-  Shoulders: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?q=80&w=600&auto=format&fit=crop',
-  Arms: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=600&auto=format&fit=crop',
+  const workouts = data.workouts[viewDate] || [];
+
+  const [exerciseName, setExerciseName] = useState('');
+  const [sets, setSets] = useState([{ id: Date.now(), reps: '', weight: '', completed: false }]);
+
+  const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
+
+  // --- ADD EXERCISE ---
+  const addExercise = () => {
+    if (!exerciseName) return;
+
+    const newWorkout = {
+      id: Date.now().toString(),
+      name: exerciseName,
+      sets: sets,
+      createdAt: Date.now(),
+    };
+
+    setData((prev: AppData) => ({
+      ...prev,
+      workouts: {
+        ...prev.workouts,
+        [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout],
+      },
+    }));
+
+    // reset
+    setExerciseName('');
+    setSets([{ id: Date.now(), reps: '', weight: '', completed: false }]);
+  };
+
+  // --- ADD SET ---
+  const addSet = () => {
+    setSets(prev => [
+      ...prev,
+      { id: Date.now(), reps: '', weight: '', completed: false }
+    ]);
+  };
+
+  // --- UPDATE SET ---
+  const updateSet = (id: number, field: string, value: string) => {
+    setSets(prev =>
+      prev.map(s =>
+        s.id === id ? { ...s, [field]: value } : s
+      )
+    );
+  };
+
+  // --- CONFIRM SET (NO CRASH VERSION) ---
+  const confirmSet = (workoutId: string, setId: number) => {
+
+    setData((prev: AppData) => ({
+      ...prev,
+      workouts: {
+        ...prev.workouts,
+        [viewDate]: (prev.workouts[viewDate] || []).map((w: any) => {
+          if (w.id !== workoutId) return w;
+
+          return {
+            ...w,
+            sets: w.sets.map((s: any) =>
+              s.id === setId ? { ...s, completed: true } : s
+            ),
+          };
+        }),
+      },
+    }));
+  };
+
+  // --- DELETE EXERCISE ---
+  const deleteWorkout = (id: string) => {
+    setData((prev: AppData) => ({
+      ...prev,
+      workouts: {
+        ...prev.workouts,
+        [viewDate]: (prev.workouts[viewDate] || []).filter((w: any) => w.id !== id),
+      },
+    }));
+  };
+
+  // --- TOTAL CALORIES ESTIMATE ---
+  const totalSets = workouts.reduce((acc: number, w: any) => acc + w.sets.length, 0);
+
+  return (
+    <div className="space-y-8">
+
+      {/* HEADER */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-black">Workout</h2>
+        <div className="text-xs opacity-40">{totalSets} sets logged</div>
+      </div>
+
+      {/* ADD EXERCISE */}
+      <div className="bg-panel p-4 rounded-2xl border border-border space-y-4">
+        
+        <input
+          value={exerciseName}
+          onChange={(e) => setExerciseName(e.target.value)}
+          placeholder="Exercise name (Bench Press)"
+          className="w-full p-4 bg-white/5 border border-border rounded-xl"
+        />
+
+        {sets.map((set, i) => (
+          <div key={set.id} className="flex gap-2">
+            
+            <input
+              placeholder="Reps"
+              value={set.reps}
+              onChange={(e) => updateSet(set.id, 'reps', e.target.value)}
+              className="w-full p-3 bg-white/5 rounded"
+            />
+
+            <input
+              placeholder="Weight"
+              value={set.weight}
+              onChange={(e) => updateSet(set.id, 'weight', e.target.value)}
+              className="w-full p-3 bg-white/5 rounded"
+            />
+
+          </div>
+        ))}
+
+        <div className="flex gap-2">
+          <button onClick={addSet} className="btn-small">
+            + Add Set
+          </button>
+
+          <button onClick={addExercise} className="bg-lime text-dark px-4 py-2 rounded-xl font-bold">
+            Save Exercise
+          </button>
+        </div>
+
+      </div>
+
+      {/* WORKOUT LIST */}
+      {workouts.map((w: any) => (
+        <div key={w.id} className="bg-panel p-4 rounded-2xl border border-border">
+
+          <div className="flex justify-between">
+            <div className="font-bold">{w.name}</div>
+
+            <button
+              onClick={() => deleteWorkout(w.id)}
+              className="text-red text-xs"
+            >
+              Delete
+            </button>
+          </div>
+
+          {/* SETS */}
+          <div className="mt-3 space-y-2">
+            {w.sets.map((s: any) => (
+              <div key={s.id} className="flex justify-between items-center bg-white/5 p-3 rounded-xl">
+
+                <div className="text-sm">
+                  {s.reps} reps × {s.weight} kg
+                </div>
+
+                <button
+                  onClick={() => confirmSet(w.id, s.id)}
+                  className={`px-3 py-1 text-xs rounded ${
+                    s.completed
+                      ? 'bg-lime text-dark'
+                      : 'bg-white/10'
+                  }`}
+                >
+                  {s.completed ? 'Done' : 'Confirm'}
+                </button>
+
+              </div>
+            ))}
+          </div>
+
+        </div>
+      ))}
+
+      {/* FLOAT ADD */}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className="fixed bottom-24 right-6 bg-lime text-dark px-6 py-4 rounded-2xl shadow-xl font-black"
+      >
+        <Plus />
+      </button>
+
+    </div>
+  );
+}  Arms: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=600&auto=format&fit=crop',
   Core: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=600&auto=format&fit=crop',
   Cardio: 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?q=80&w=600&auto=format&fit=crop',
   Sports: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?q=80&w=600&auto=format&fit=crop',
