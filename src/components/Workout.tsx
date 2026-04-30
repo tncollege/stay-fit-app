@@ -43,6 +43,14 @@ const CATEGORY_IMAGES: Record<string, string> = {
 
 const BODY_PARTS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'];
 
+const RPE_LABELS: Record<string, string> = {
+  '6': 'Easy',
+  '7': 'Moderate',
+  '8': 'Hard',
+  '9': 'Very Hard',
+  '10': 'Max',
+};
+
 function safeId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -50,6 +58,7 @@ function safeId() {
 
 function showWorkoutMessage(message: string, tone: 'success' | 'error' = 'success') {
   if (typeof document === 'undefined') return;
+
   const existing = document.getElementById('stayfitinlife-workout-toast');
   if (existing) existing.remove();
 
@@ -82,6 +91,16 @@ function getLocalDateKey(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function getSetVolume(set: any) {
+  const weight = Number(set?.weight || 0);
+  const reps = Number(set?.reps || 0);
+  return weight * reps;
+}
+
+function getWorkoutTotalVolume(sets: any[] = []) {
+  return sets.reduce((total, set) => total + getSetVolume(set), 0);
 }
 
 function getWorkoutDisplayName(w: any) {
@@ -166,6 +185,7 @@ export default function WorkoutView({
   const [searchQuery, setSearchQuery] = useState('');
   const [aiSearching, setAiSearching] = useState(false);
   const [savingWorkout, setSavingWorkout] = useState(false);
+  const [savingSet, setSavingSet] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
 
@@ -192,6 +212,7 @@ export default function WorkoutView({
 
   const [workoutPlans, setWorkoutPlans] = useState<Record<string, any>>({});
   const [planEditorOpen, setPlanEditorOpen] = useState(false);
+  const [completedPlanExercises, setCompletedPlanExercises] = useState<Record<string, boolean>>({});
 
   const dayNames = useMemo(
     () => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
@@ -220,6 +241,9 @@ export default function WorkoutView({
     exercises: [],
   };
   const todayPlan = workoutPlans[todayName];
+
+  const totalWorkoutVolume = getWorkoutTotalVolume(currentSets);
+  const trainedMuscles = Array.from(new Set(currentSets.map((s) => s.muscle).filter(Boolean)));
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -263,6 +287,32 @@ export default function WorkoutView({
       .map((e: any) => e.name);
 
     return Array.from(new Set([...fromBase, ...fromPersonal].map((e) => toExerciseTitle(String(e)))));
+  };
+
+  const getPreviousPerformance = (exerciseName: string) => {
+    if (!exerciseName) return null;
+
+    const allWorkouts = Object.values(data.workouts || {}).flat() as any[];
+    const matchingSets = allWorkouts
+      .flatMap((w: any) => (w.sets || []).map((s: any) => ({ ...s, workoutName: w.name })))
+      .filter((s: any) => String(s.exercise || '').toLowerCase() === exerciseName.toLowerCase());
+
+    if (!matchingSets.length) return null;
+
+    const last = matchingSets[matchingSets.length - 1];
+    const best = matchingSets.reduce((bestSet: any, current: any) => {
+      return getSetVolume(current) > getSetVolume(bestSet) ? current : bestSet;
+    }, matchingSets[0]);
+
+    const suggestedWeight = Number(last.weight || 0) > 0 ? Number(last.weight || 0) + 2.5 : 0;
+    const suggestedReps = Number(last.reps || 0) > 0 ? Number(last.reps || 0) + 1 : 0;
+
+    return {
+      lastWeight: last.weight || '0',
+      lastReps: last.reps || '0',
+      bestSet: `${best.weight || 0} kg × ${best.reps || 0}`,
+      suggested: suggestedWeight > 0 ? `Try ${suggestedWeight} kg or ${suggestedReps} reps today` : `Try ${suggestedReps} reps today`,
+    };
   };
 
   const suggestSets = () => {
@@ -363,6 +413,7 @@ export default function WorkoutView({
 
   const startTodayPlan = () => {
     if (!todayPlan) return;
+
     setWorkoutName(todayPlan.planName || todayName + ' Workout');
 
     const first = todayPlan.exercises?.[0];
@@ -375,8 +426,27 @@ export default function WorkoutView({
     showWorkoutMessage('Today’s plan loaded');
   };
 
+  const startPlanExercise = (ex: any) => {
+    setSelectedMuscle(ex.bodyPart || 'Chest');
+    setExercise(ex.name);
+    setActiveTab('strength');
+    showWorkoutMessage(`${ex.name} loaded`);
+  };
+
+  const togglePlanExerciseComplete = (name: string) => {
+    setCompletedPlanExercises((prev) => ({
+      ...prev,
+      [name]: !prev[name],
+    }));
+  };
+
   const handleAddSet = async () => {
-    if (!exercise || !reps) return;
+    if (!exercise || !reps) {
+      showWorkoutMessage('Select exercise and enter reps first.', 'error');
+      return;
+    }
+
+    setSavingSet(true);
 
     const finalExercise = toExerciseTitle(exercise);
     const finalWeight = weight || '0';
@@ -406,6 +476,8 @@ export default function WorkoutView({
 
     setWeight('');
     setReps('');
+    showWorkoutMessage('Set saved successfully');
+    window.setTimeout(() => setSavingSet(false), 400);
   };
 
   const handleAiSearch = async () => {
@@ -465,6 +537,7 @@ export default function WorkoutView({
       prev.map((s) => (s.id === id ? { ...s, weight: editWeight || '0', reps: editReps } : s))
     );
     setEditingSetId(null);
+    showWorkoutMessage('Set updated');
   };
 
   const handleAddCustomExercise = () => {
@@ -492,6 +565,7 @@ export default function WorkoutView({
 
     setShowCustomForm(false);
     setCustomExercise({ name: '', bodyPart: 'Chest', met: 4, caloriesPerMinuteStandard: 6 });
+    showWorkoutMessage('Exercise added');
   };
 
   const addWorkoutToStateAndCloud = async (newWorkout: Workout) => {
@@ -551,7 +625,10 @@ export default function WorkoutView({
   };
 
   const handleFinishWorkout = async () => {
-    if (currentSets.length === 0) return;
+    if (currentSets.length === 0) {
+      showWorkoutMessage('Save at least one set first.', 'error');
+      return;
+    }
 
     const workoutMuscles = Array.from(new Set(currentSets.map((s: any) => s.muscle || selectedMuscle).filter(Boolean)));
 
@@ -666,9 +743,9 @@ export default function WorkoutView({
       <div className="space-y-6">
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
-            <h2 className="text-4xl font-black uppercase tracking-tighter">Performance Log</h2>
+            <h2 className="text-4xl font-black uppercase tracking-tighter">Workout Log</h2>
             <div className="flex items-center gap-4 mt-2">
-              <div className="label-small text-lime tracking-[0.2em]">Neural Output Calibration</div>
+              <div className="label-small text-lime tracking-[0.2em]">Track sets, reps, volume and progress</div>
               <div className="h-1 w-1 rounded-full bg-white/20" />
               <div className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
                 {workoutsArr.length} Sessions Logged
@@ -677,6 +754,13 @@ export default function WorkoutView({
           </div>
           <DateNavigator viewDate={viewDate} setViewDate={setViewDate} />
         </header>
+
+        <SessionSummary
+          totalSets={currentSets.length}
+          totalVolume={totalWorkoutVolume}
+          trainedMuscles={trainedMuscles}
+          currentSets={currentSets}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
@@ -708,6 +792,9 @@ export default function WorkoutView({
                 suggestSets={suggestSets}
                 suggestedRepsForExercise={suggestedRepsForExercise}
                 yesterdayWorkouts={yesterdayWorkouts}
+                startPlanExercise={startPlanExercise}
+                completedPlanExercises={completedPlanExercises}
+                togglePlanExerciseComplete={togglePlanExerciseComplete}
               />
 
               <AISearchBar
@@ -734,6 +821,7 @@ export default function WorkoutView({
                   rpe={rpe}
                   setRpe={setRpe}
                   handleAddSet={handleAddSet}
+                  savingSet={savingSet}
                   currentSets={currentSets}
                   setCurrentSets={setCurrentSets}
                   editingSetId={editingSetId}
@@ -748,6 +836,7 @@ export default function WorkoutView({
                   handleFinishWorkout={handleFinishWorkout}
                   savingWorkout={savingWorkout}
                   setEditingSetId={setEditingSetId}
+                  previousPerformance={getPreviousPerformance(exercise)}
                 />
               ) : activeTab === 'cardio' ? (
                 <CardioPanel
@@ -820,6 +909,26 @@ export default function WorkoutView({
   );
 }
 
+function SessionSummary({ totalSets, totalVolume, trainedMuscles, currentSets }: any) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <SummaryCard label="Total Sets" value={totalSets} />
+      <SummaryCard label="Total Volume" value={`${totalVolume} kg`} />
+      <SummaryCard label="Muscles Trained" value={trainedMuscles.length ? trainedMuscles.join(', ') : '—'} />
+      <SummaryCard label="Active Session" value={currentSets.length ? 'In Progress' : 'Not Started'} />
+    </div>
+  );
+}
+
+function SummaryCard({ label, value }: any) {
+  return (
+    <div className="rounded-2xl border border-border bg-white/[0.02] p-4">
+      <div className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">{label}</div>
+      <div className="text-sm font-black text-white">{value}</div>
+    </div>
+  );
+}
+
 function TabSwitcher({ activeTab, setActiveTab }: any) {
   return (
     <div className="flex gap-2 p-1 bg-black/40 rounded-2xl border border-border w-fit overflow-x-auto max-w-full scrollbar-hide">
@@ -850,8 +959,8 @@ function AISearchBar({ searchQuery, setSearchQuery, handleAiSearch, aiSearching,
       <input
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        className="w-full pl-12 pr-28 py-5 bg-white/[0.02] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all placeholder:opacity-20"
-        placeholder="Search exercise with AI..."
+        className="w-full pl-12 pr-28 py-5 bg-white/[0.02] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all placeholder:opacity-40"
+        placeholder="Search exercise..."
       />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
         <button
@@ -860,12 +969,14 @@ function AISearchBar({ searchQuery, setSearchQuery, handleAiSearch, aiSearching,
           className={`p-2 rounded-xl border transition-all ${
             aiSearching ? 'bg-white/5 border-white/10 text-white/20' : 'bg-sky/10 border-sky/20 text-sky hover:bg-sky/20'
           }`}
+          title="Search with AI"
         >
           <Sparkles size={18} className={aiSearching ? 'animate-pulse' : ''} />
         </button>
         <button
           onClick={() => setShowCustomForm(true)}
           className="p-2 bg-pink/10 text-pink rounded-xl border border-pink/20 hover:bg-pink/20 transition-all"
+          title="Add custom exercise"
         >
           <PlusCircle size={18} />
         </button>
@@ -900,6 +1011,9 @@ function WeeklyPlanSection(props: any) {
     suggestSets,
     suggestedRepsForExercise,
     yesterdayWorkouts,
+    startPlanExercise,
+    completedPlanExercises,
+    togglePlanExerciseComplete,
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
@@ -918,7 +1032,7 @@ function WeeklyPlanSection(props: any) {
           <div className="label-small text-lime mb-2">Today’s Workout Plan • {todayName}</div>
           <h3 className="text-2xl font-black tracking-tight">{todayPlan?.planName || 'No plan set for today'}</h3>
           <p className="text-[11px] text-white/40 mt-1">
-            Select workout name and exercise names only. Suggested sets/reps are generated from your goal.
+            Start your plan, tick completed exercises, or edit your weekly split.
           </p>
         </div>
         <div className="flex gap-2">
@@ -948,11 +1062,38 @@ function WeeklyPlanSection(props: any) {
       {plannedExercises.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {plannedExercises.map((ex: any, idx: number) => (
-            <div key={idx} className="rounded-2xl border border-border bg-white/[0.02] p-4">
-              <div className="text-sm font-black">{ex.name}</div>
-              <div className="label-small text-lime mt-1">{ex.bodyPart}</div>
-              <div className="text-[10px] text-white/40 mt-3 font-bold uppercase tracking-widest">
+            <div key={idx} className="rounded-2xl border border-border bg-white/[0.02] p-4 space-y-3">
+              <div className="flex justify-between gap-3">
+                <div>
+                  <div className="text-sm font-black">{ex.name}</div>
+                  <div className="label-small text-lime mt-1">{ex.bodyPart}</div>
+                </div>
+                <button
+                  onClick={() => togglePlanExerciseComplete(ex.name)}
+                  className={`px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest ${
+                    completedPlanExercises[ex.name]
+                      ? 'bg-lime text-dark border-lime'
+                      : 'bg-white/[0.03] text-white/40 border-border'
+                  }`}
+                >
+                  {completedPlanExercises[ex.name] ? 'Done' : 'Mark Done'}
+                </button>
+              </div>
+
+              <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest">
                 Suggested: {suggestSets()} sets • {suggestedRepsForExercise(ex.name, ex.bodyPart)} reps
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={() => startPlanExercise(ex)} className="py-2 rounded-xl bg-lime/15 text-lime border border-lime/20 text-[9px] font-black uppercase">
+                  Start
+                </button>
+                <button className="py-2 rounded-xl bg-white/[0.03] text-white/40 border border-border text-[9px] font-black uppercase">
+                  Replace
+                </button>
+                <button className="py-2 rounded-xl bg-sky/10 text-sky border border-sky/20 text-[9px] font-black uppercase">
+                  Form Tips
+                </button>
               </div>
             </div>
           ))}
@@ -1000,7 +1141,7 @@ function WeeklyPlanSection(props: any) {
           </div>
 
           <div className="space-y-3">
-            <InputText label="Add Exercise" value={planExerciseInput} onChange={setPlanExerciseInput} placeholder="Type or choose exercise..." />
+            <InputText label="Add Exercise" value={planExerciseInput} onChange={setPlanExerciseInput} placeholder="Search exercise..." />
             <div className="max-h-40 overflow-y-auto space-y-2 custom-scrollbar">
               {getExerciseOptions(planBodyPartInput)
                 .filter((e: string) => !planExerciseInput || e.toLowerCase().includes(planExerciseInput.toLowerCase()))
@@ -1076,6 +1217,7 @@ function StrengthPanel(props: any) {
     rpe,
     setRpe,
     handleAddSet,
+    savingSet,
     currentSets,
     setCurrentSets,
     editingSetId,
@@ -1090,6 +1232,7 @@ function StrengthPanel(props: any) {
     handleFinishWorkout,
     savingWorkout,
     setEditingSetId,
+    previousPerformance,
   } = props;
 
   return (
@@ -1135,13 +1278,13 @@ function StrengthPanel(props: any) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
         <div className="space-y-6">
           <div className="space-y-2">
-            <div className="label-small text-muted ml-1">Calibration Target (Exercise)</div>
+            <div className="label-small text-muted ml-1">Select Exercise</div>
             <div className="relative">
               <input
                 value={exercise}
                 onChange={(e) => setExercise(toExerciseTitle(e.target.value))}
                 className="w-full p-5 bg-white/[0.03] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all"
-                placeholder="Select or type Exercise..."
+                placeholder="Search exercise..."
               />
               <Search className="absolute right-5 top-1/2 -translate-y-1/2 opacity-20" size={16} />
             </div>
@@ -1174,7 +1317,16 @@ function StrengthPanel(props: any) {
               >
                 <div className="text-[10px] font-black text-lime uppercase tracking-widest mb-1">Selected Exercise</div>
                 <div className="text-sm font-bold text-white/90">{exercise}</div>
-                <p className="text-[10px] text-white/30 mt-1">Log your working sets below.</p>
+                {previousPerformance ? (
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    <MiniMetric label="Last Weight" value={`${previousPerformance.lastWeight} kg`} />
+                    <MiniMetric label="Last Reps" value={previousPerformance.lastReps} />
+                    <MiniMetric label="Best Set" value={previousPerformance.bestSet} />
+                    <MiniMetric label="Next Target" value={previousPerformance.suggested} />
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-white/30 mt-1">No previous performance found. Start with a controlled first set.</p>
+                )}
               </motion.div>
             )}
           </div>
@@ -1195,8 +1347,8 @@ function StrengthPanel(props: any) {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <InputBlock label="Load (KG)" value={weight} onChange={setWeight} placeholder="0 (BW)" />
-            <InputBlock label="Volume (Reps)" value={reps} onChange={setReps} placeholder="10" />
+            <InputBlock label="Weight (KG)" value={weight} onChange={setWeight} placeholder="0 for bodyweight" />
+            <InputBlock label="Reps" value={reps} onChange={setReps} placeholder="10" />
           </div>
         </div>
 
@@ -1214,7 +1366,7 @@ function StrengthPanel(props: any) {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <Brain size={12} className="text-lime" />
-                    <span className="text-[10px] font-black uppercase text-lime tracking-[0.2em]">Neural Calibration</span>
+                    <span className="text-[10px] font-black uppercase text-lime tracking-[0.2em]">Muscle Focus</span>
                   </div>
                   <div className="text-2xl font-black uppercase tracking-tighter text-white">{selectedMuscle} Group</div>
                 </div>
@@ -1231,9 +1383,10 @@ function StrengthPanel(props: any) {
 
       <button
         onClick={handleAddSet}
-        className="w-full py-5 bg-white/[0.02] border border-border border-dashed hover:border-lime text-sky font-black rounded-2xl transition-all uppercase text-[10px] tracking-[0.2em]"
+        disabled={savingSet}
+        className="w-full py-5 bg-white/[0.02] border border-border border-dashed hover:border-lime text-sky font-black rounded-2xl transition-all uppercase text-[10px] tracking-[0.2em] disabled:opacity-50 disabled:pointer-events-none"
       >
-        Confirm Set Output
+        {savingSet ? 'Saving Set...' : 'Save Set'}
       </button>
 
       {currentSets.length > 0 && (
@@ -1254,6 +1407,15 @@ function StrengthPanel(props: any) {
           setEditingSetId={setEditingSetId}
         />
       )}
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: any) {
+  return (
+    <div className="rounded-xl bg-black/20 border border-border p-3">
+      <div className="text-[8px] uppercase tracking-widest text-white/30 font-black">{label}</div>
+      <div className="text-[10px] text-white/80 font-black mt-1">{value}</div>
     </div>
   );
 }
@@ -1291,9 +1453,9 @@ function RpeSelector({ rpe, setRpe }: any) {
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center mb-2 px-1">
-        <div className="label-small text-muted">Intensity (RPE Scale)</div>
+        <div className="label-small text-muted">Intensity / RPE</div>
         <span className={`text-[10px] font-black uppercase ${Number(rpe) > 8 ? 'text-pink' : 'text-lime'}`}>
-          {rpe === '10' ? 'Failure' : rpe === '9' ? 'Extreme' : rpe === '8' ? 'Heavy' : 'Moderate'}
+          RPE {rpe} • {RPE_LABELS[rpe]}
         </span>
       </div>
       <div className="grid grid-cols-5 gap-2">
@@ -1307,7 +1469,8 @@ function RpeSelector({ rpe, setRpe }: any) {
                 : 'bg-white/5 border-border text-white/40 hover:border-lime/30'
             }`}
           >
-            {val}
+            <div>{val}</div>
+            <div className="text-[8px] opacity-60 mt-1">{RPE_LABELS[val]}</div>
           </button>
         ))}
       </div>
@@ -1338,96 +1501,95 @@ function ActiveSets(props: any) {
       <div className="space-y-4 mb-6">
         <InputText label="Workout Name" value={workoutName} onChange={setWorkoutName} placeholder="Push, Pull, Upper Body, Full Body..." />
         <div className="flex justify-between items-center">
-          <div className="label-small text-lime">Active Bio-Calibration Session</div>
+          <div className="label-small text-lime">Saved Sets</div>
           <button
             onClick={handleFinishWorkout}
             disabled={savingWorkout}
             className="px-6 py-2 bg-lime text-dark rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
           >
-            {savingWorkout ? 'Saving...' : 'Submit Session'}
+            {savingWorkout ? 'Saving...' : 'Submit Workout'}
           </button>
         </div>
       </div>
 
-      <div className="space-y-2">
-        {currentSets.map((s: any, idx: number) => (
-          <div key={s.id} className="flex justify-between items-center p-5 bg-white/[0.02] border border-border rounded-2xl group hover:border-lime/30 transition-all">
-            {editingSetId === s.id ? (
-              <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-4">
-                <div className="flex-1">
-                  <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
-                  <div className="label-small opacity-30 mt-1">Editing Calibration {idx + 1}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={editWeight}
-                    onChange={(e) => setEditWeight(e.target.value)}
-                    className="w-20 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
-                    placeholder="0"
-                  />
-                  <input
-                    type="number"
-                    value={editReps}
-                    onChange={(e) => setEditReps(e.target.value)}
-                    className="w-16 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
-                    placeholder="Reps"
-                  />
-                  <button onClick={() => handleUpdateSet(s.id)} className="p-2 bg-lime text-dark rounded-lg hover:bg-lime/80 transition-all">
-                    <CheckCircle2 size={14} />
-                  </button>
-                  <button onClick={() => setEditingSetId(null)} className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white transition-all">
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <p className="font-bold text-sm tracking-tight">{s.exercise}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="label-small opacity-30">Set {idx + 1}</div>
-                    {s.rpe && (
-                      <div className={`px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase ${Number(s.rpe) >= 9 ? 'bg-pink/20 text-pink' : 'bg-lime/20 text-lime'}`}>
-                        RPE {s.rpe}
+      <div className="overflow-x-auto rounded-2xl border border-border bg-white/[0.02]">
+        <table className="w-full min-w-[620px] text-left">
+          <thead>
+            <tr className="border-b border-border text-[9px] uppercase tracking-widest text-white/30">
+              <th className="p-4">Set</th>
+              <th className="p-4">Exercise</th>
+              <th className="p-4">Weight</th>
+              <th className="p-4">Reps</th>
+              <th className="p-4">RPE</th>
+              <th className="p-4">Volume</th>
+              <th className="p-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {currentSets.map((s: any, idx: number) => (
+              <tr key={s.id} className="border-b border-border/60 last:border-0">
+                <td className="p-4 text-xs font-black text-lime">{idx + 1}</td>
+                <td className="p-4 text-xs font-bold">{s.exercise}</td>
+
+                {editingSetId === s.id ? (
+                  <>
+                    <td className="p-4">
+                      <input
+                        type="number"
+                        value={editWeight}
+                        onChange={(e) => setEditWeight(e.target.value)}
+                        className="w-20 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
+                      />
+                    </td>
+                    <td className="p-4">
+                      <input
+                        type="number"
+                        value={editReps}
+                        onChange={(e) => setEditReps(e.target.value)}
+                        className="w-16 p-2 bg-black border border-border rounded-lg text-xs font-black text-lime focus:outline-none focus:border-lime"
+                      />
+                    </td>
+                    <td className="p-4 text-xs font-bold">RPE {s.rpe}</td>
+                    <td className="p-4 text-xs font-black text-white/70">{getSetVolume({ ...s, weight: editWeight, reps: editReps })} kg</td>
+                    <td className="p-4">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => handleUpdateSet(s.id)} className="p-2 bg-lime text-dark rounded-lg hover:bg-lime/80 transition-all">
+                          <CheckCircle2 size={14} />
+                        </button>
+                        <button onClick={() => setEditingSetId(null)} className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-white transition-all">
+                          <X size={14} />
+                        </button>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <div className="text-xs font-black text-lime">
-                      {s.weight === '0' ? 'BW' : s.weight}
-                      {s.weight !== '0' && <span className="text-[10px] opacity-40 ml-1">KG</span>}
-                    </div>
-                    <div className="text-[10px] font-bold opacity-30">Load</div>
-                  </div>
-                  <div className="w-px h-6 bg-white/10" />
-                  <div className="text-right">
-                    <div className="text-xs font-black text-white">{s.reps}</div>
-                    <div className="text-[10px] font-bold opacity-30">Reps</div>
-                  </div>
-
-                  <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleStartEditingSet(s)}
-                      className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.35)] transition-all active:scale-95"
-                    >
-                      <Search size={14} />
-                    </button>
-                    <button
-                      onClick={() => setCurrentSets(currentSets.filter((x: any) => x.id !== s.id))}
-                      className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.35)] transition-all active:scale-95"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="p-4 text-xs font-black text-lime">{s.weight === '0' ? 'BW' : `${s.weight} kg`}</td>
+                    <td className="p-4 text-xs font-black">{s.reps}</td>
+                    <td className="p-4 text-xs font-bold">RPE {s.rpe} • {RPE_LABELS[String(s.rpe)] || ''}</td>
+                    <td className="p-4 text-xs font-black text-white/70">{getSetVolume(s)} kg</td>
+                    <td className="p-4">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => handleStartEditingSet(s)}
+                          className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black transition-all active:scale-95"
+                        >
+                          <Search size={14} />
+                        </button>
+                        <button
+                          onClick={() => setCurrentSets(currentSets.filter((x: any) => x.id !== s.id))}
+                          className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black transition-all active:scale-95"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </motion.div>
   );
@@ -1451,7 +1613,7 @@ function CardioPanel(props: any) {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-2 transition-all">
       <div className="space-y-6">
-        <div className="label-small text-muted ml-1">Primary Cardio Engines</div>
+        <div className="label-small text-muted ml-1">Primary Cardio Options</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {getExerciseOptions('Cardio').map((e: string) => (
             <button
@@ -1468,7 +1630,7 @@ function CardioPanel(props: any) {
           ))}
         </div>
 
-        <InputText label="Manual Selection / Search Override" value={cardioExercise} onChange={(v: string) => setCardioExercise(toExerciseTitle(v))} placeholder="Select or type cardio..." />
+        <InputText label="Manual Selection / Search" value={cardioExercise} onChange={(v: string) => setCardioExercise(toExerciseTitle(v))} placeholder="Search cardio..." />
       </div>
 
       <div
@@ -1515,7 +1677,7 @@ function CardioPanel(props: any) {
         className="w-full py-6 bg-lime text-dark font-black rounded-3xl shadow-xl shadow-lime/20 uppercase text-xs tracking-[0.3em] active:scale-95 disabled:opacity-20 disabled:pointer-events-none transition-all flex items-center justify-center gap-3"
       >
         <CheckCircle2 size={18} />
-        Log Cardio Output
+        Log Cardio
       </button>
     </div>
   );
@@ -1587,7 +1749,7 @@ function SportsYogaPanel(props: any) {
             disabled={!cardioExercise || !cardioDuration}
             className="w-full py-5 bg-lime text-dark font-black rounded-2xl shadow-xl shadow-lime/20 uppercase text-xs tracking-widest active:scale-95 disabled:opacity-20 transition-all"
           >
-            Log {mode} Session
+            Log {mode}
           </button>
         </div>
       </div>
@@ -1598,11 +1760,11 @@ function SportsYogaPanel(props: any) {
 function WorkoutHistory({ workoutsArr, handleEditWorkout, handleDeleteWorkout }: any) {
   return (
     <div id="workout-history" className="stat-card">
-      <h3 className="label-small mb-6 text-pink">Temporal Record</h3>
+      <h3 className="label-small mb-6 text-pink">Workout History</h3>
 
       {workoutsArr.length === 0 ? (
         <div className="py-16 text-center">
-          <div className="label-small opacity-20 italic">No output recorded for this date</div>
+          <div className="label-small opacity-20 italic">No workout recorded for this date</div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -1617,14 +1779,16 @@ function WorkoutHistory({ workoutsArr, handleEditWorkout, handleDeleteWorkout }:
                 <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover/session:opacity-100 transition-opacity">
                   <button
                     onClick={() => handleEditWorkout(w)}
-                    className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black shadow-[0_0_10px_rgba(163,230,53,0.6)] transition-all active:scale-95"
+                    className="p-2 rounded-lg bg-lime/20 text-lime border border-lime/30 hover:bg-lime hover:text-black transition-all active:scale-95"
+                    title="Edit workout"
                   >
                     <Search size={14} />
                   </button>
 
                   <button
                     onClick={() => handleDeleteWorkout(w.id)}
-                    className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black shadow-[0_0_10px_rgba(244,114,182,0.6)] transition-all active:scale-95"
+                    className="p-2 rounded-lg bg-pink/20 text-pink border border-pink/30 hover:bg-pink hover:text-black transition-all active:scale-95"
+                    title="Delete workout"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -1632,8 +1796,8 @@ function WorkoutHistory({ workoutsArr, handleEditWorkout, handleDeleteWorkout }:
               </div>
 
               <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest opacity-40">
-                <span>{w.sets?.length || 0} total units</span>
-                <span className="text-lime">{w.caloriesBurned || 0} kcal net</span>
+                <span>{w.sets?.length || 0} sets</span>
+                <span className="text-lime">{getWorkoutTotalVolume(w.sets || [])} kg volume</span>
               </div>
             </div>
           ))}
@@ -1670,8 +1834,8 @@ function CustomExerciseModal(props: any) {
               <X size={18} />
             </button>
 
-            <div className="label-small text-pink mb-2">Custom Biometric Input</div>
-            <h3 className="text-3xl font-black mb-10">Add Custom Exercise</h3>
+            <div className="label-small text-pink mb-2">Custom Exercise</div>
+            <h3 className="text-3xl font-black mb-10">Add Exercise</h3>
 
             <div className="space-y-5">
               <InputText
@@ -1721,6 +1885,9 @@ function RestTimer({ time, setTime, isActive, setIsActive, reason }: any) {
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('StayFitInLife', { body: 'Rest complete. Start your next set.' });
       }
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate?.([200, 100, 200]);
+      }
     }
 
     return () => {
@@ -1737,7 +1904,7 @@ function RestTimer({ time, setTime, isActive, setIsActive, reason }: any) {
     <div className="stat-card">
       <div className="flex items-center gap-3 mb-6">
         <Timer size={18} className="text-lime" />
-        <h3 className="label-small text-lime">Recovery Timer</h3>
+        <h3 className="label-small text-lime">Rest Timer</h3>
       </div>
 
       <div className="text-5xl font-black font-mono tracking-tighter">
@@ -1752,10 +1919,11 @@ function RestTimer({ time, setTime, isActive, setIsActive, reason }: any) {
           className="flex-1 py-3 rounded-xl bg-lime text-dark font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
         >
           {isActive ? <Pause size={14} /> : <Play size={14} />}
-          {isActive ? 'Pause' : 'Start'}
+          {isActive ? 'Pause Timer' : 'Start Timer'}
         </button>
-        <button onClick={reset} className="px-4 rounded-xl bg-white/5 border border-border text-white/50 hover:text-white">
+        <button onClick={reset} className="px-4 rounded-xl bg-white/5 border border-border text-white/50 hover:text-white text-[10px] font-black uppercase">
           <RotateCcw size={14} />
+          Reset
         </button>
       </div>
     </div>
