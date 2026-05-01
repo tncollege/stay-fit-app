@@ -193,11 +193,25 @@ const buildNutritionEngine = (input: NutritionEngineInput): NutritionEngineOutpu
     mealTimingInsight = `${currentMealWindow.charAt(0).toUpperCase() + currentMealWindow.slice(1)} already logged. Focus on remaining protein, water, and recovery.`;
   }
 
+  const carbGap = Math.max(0, targets.carbs - consumed.carbs);
+  const fatGap = Math.max(0, targets.fats - consumed.fats);
+
   let nextBestAction = 'Stay consistent.';
-  if (waterGap >= 0.5) nextBestAction = `Add ${Math.round(Math.min(0.75, waterGap) * 1000)}ml water.`;
-  if (proteinGap > 25) nextBestAction = `Add ${Math.min(40, Math.round(proteinGap))}g lean protein.`;
-  if (!loggedMeals.dinner && currentMealWindow === 'dinner') nextBestAction = 'Create a high-protein dinner.';
-  if (loggedMeals.dinner && waterGap < 0.5 && proteinGap <= 25) nextBestAction = 'Wind down: digestion, hydration, and sleep support.';
+  if (calorieGap > 600 && proteinGap > 25 && carbGap > 35) {
+    nextBestAction = `Build next meal: ${Math.min(40, Math.round(proteinGap))}g protein + ${Math.min(60, Math.round(carbGap))}g carbs, keep fats moderate.`;
+  } else if (proteinGap > 25 && carbGap > 35) {
+    nextBestAction = `Add ${Math.min(40, Math.round(proteinGap))}g protein + ${Math.min(50, Math.round(carbGap))}g clean carbs.`;
+  } else if (proteinGap > 25) {
+    nextBestAction = `Add ${Math.min(40, Math.round(proteinGap))}g lean protein.`;
+  } else if (carbGap > 50 && workoutMealTiming !== 'normal') {
+    nextBestAction = `Add ${Math.min(60, Math.round(carbGap))}g workout carbs.`;
+  } else if (fatGap > 20 && calorieGap > 300) {
+    nextBestAction = `Add a small healthy-fat serving, around ${Math.min(20, Math.round(fatGap))}g fats.`;
+  } else if (waterGap >= 0.5) {
+    nextBestAction = `Add ${Math.round(Math.min(0.75, waterGap) * 1000)}ml water.`;
+  }
+  if (!loggedMeals.dinner && currentMealWindow === 'dinner') nextBestAction = proteinGap > 25 ? 'Create a high-protein dinner.' : 'Create a balanced dinner.';
+  if (loggedMeals.dinner && waterGap < 0.5 && proteinGap <= 25 && carbGap <= 35) nextBestAction = 'Wind down: digestion, hydration, and sleep support.';
 
   let status: NutritionEngineOutput['status'] = 'Needs Attention';
   const proteinOk = consumed.protein >= targets.protein * 0.75;
@@ -514,6 +528,22 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
   const mealSuggestion = nutritionEngine.mealTimingInsight;
   const nextBestNutritionAction = nutritionEngine.nextBestAction;
   const dailyNutritionScore = nutritionEngine.dailyScore;
+
+  const macroGaps = useMemo(() => ({
+    calories: Math.max(0, Math.round(targets.calories - consumed.calories)),
+    protein: Math.max(0, Math.round(targets.protein - consumed.protein)),
+    carbs: Math.max(0, Math.round(targets.carbs - consumed.carbs)),
+    fats: Math.max(0, Math.round(targets.fats - consumed.fats)),
+    water: Math.max(0, Math.round(waterGap * 10) / 10),
+  }), [targets, consumed, waterGap]);
+
+  const fuelBalanceCards = useMemo(() => ([
+    { label: 'Calories left', value: macroGaps.calories > 0 ? String(macroGaps.calories) : 'Done', unit: macroGaps.calories > 0 ? 'kcal' : '', tone: 'text-pink', action: macroGaps.calories > 500 ? 'Add balanced meal' : 'Maintain' },
+    { label: 'Protein left', value: String(macroGaps.protein), unit: 'g', tone: 'text-lime', action: macroGaps.protein > 25 ? 'Lean protein' : 'On track' },
+    { label: 'Carbs left', value: String(macroGaps.carbs), unit: 'g', tone: 'text-sky', action: macroGaps.carbs > 45 ? 'Workout fuel' : 'Controlled' },
+    { label: 'Fats left', value: String(macroGaps.fats), unit: 'g', tone: 'text-amber-300', action: macroGaps.fats > 20 ? 'Moderate fats' : 'Keep lean' },
+    { label: 'Water left', value: macroGaps.water > 0 ? macroGaps.water.toFixed(1) : 'Done', unit: macroGaps.water > 0 ? 'L' : '', tone: 'text-sky', action: macroGaps.water > 0.5 ? 'Sip now' : 'Hydrated' },
+  ]), [macroGaps]);
 
   // Conversions for non-standard serving sizes
   const CONVERSIONS: Record<string, number> = {
@@ -1364,18 +1394,31 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
                 +500ml Water
               </button>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-[10px] font-black uppercase tracking-widest">
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-white/50">
-                Protein left
-                <div className="mt-1 text-lime text-sm">
-                  {Math.max(0, Math.round(targets.protein - consumed.protein))}g
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Fuel Balance</div>
+                  <div className="mt-1 text-[9px] font-bold uppercase tracking-widest text-white/30">Macro gaps for the next eating decision</div>
                 </div>
+                {performanceEngine?.nutrition?.targets && (
+                  <div className="rounded-full border border-lime/20 bg-lime/10 px-3 py-1 text-[8px] font-black uppercase tracking-widest text-lime">
+                    WHOOP adjusted
+                  </div>
+                )}
               </div>
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-white/50">
-                Water left
-                <div className="mt-1 text-sky text-sm">
-                  {waterGap > 0 ? waterGap.toFixed(1) + 'L' : 'Done'}
-                </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[10px] font-black uppercase tracking-widest">
+                {fuelBalanceCards.map(card => (
+                  <div key={card.label} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-white/50">
+                    {card.label}
+                    <div className={"mt-1 text-sm " + card.tone}>
+                      {card.value}{card.unit && <span className="ml-1 text-[9px] text-white/30">{card.unit}</span>}
+                    </div>
+                    <div className="mt-1 text-[8px] font-black uppercase tracking-widest text-white/25">
+                      {card.action}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
