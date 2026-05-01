@@ -95,6 +95,8 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     unit: 'portion',
     portion: '1 serving'
   });
+  const [weatherTemp, setWeatherTemp] = useState<number | null>(null);
+  const [weatherAvailable, setWeatherAvailable] = useState(false);
 
   const mealsArr = data.meals[viewDate] || [];
   const waterArr = data.water[viewDate] || [];
@@ -163,8 +165,85 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     };
   }, [data.profile]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setWeatherAvailable(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+
+        try {
+          const res = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m`
+          );
+          const json = await res.json();
+          const temp = Number(json?.current?.temperature_2m);
+
+          if (!cancelled && Number.isFinite(temp)) {
+            setWeatherTemp(temp);
+            setWeatherAvailable(true);
+          }
+        } catch (err) {
+          console.error('Global weather hydration fetch failed ❌', err);
+          if (!cancelled) setWeatherAvailable(false);
+        }
+      },
+      (err) => {
+        console.warn('Location permission unavailable for hydration weather:', err?.message || err);
+        if (!cancelled) setWeatherAvailable(false);
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 30 * 60 * 1000 }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const waterTotalL = waterTotalMl / 1000;
-  const waterGap = Math.max(0, targets.water - waterTotalL);
+  const workoutArr = data.workouts?.[viewDate] || [];
+  const stepsToday = Number(data.steps?.[viewDate] || 0);
+  const workoutBurned = workoutArr.reduce((sum: number, workout: any) => sum + Number(workout.caloriesBurned || 0), 0);
+
+  const getWeatherHydrationBoost = (tempC: number) => {
+    if (tempC >= 35) return 0.8;
+    if (tempC >= 30) return 0.5;
+    if (tempC >= 25) return 0.3;
+    return 0;
+  };
+
+  // Global smart hydration target: base + live weather from GPS + activity load.
+  const hydrationContext = useMemo(() => {
+    const weatherBoost = weatherTemp !== null ? getWeatherHydrationBoost(weatherTemp) : 0;
+    const workoutBoost = Math.min(0.75, (workoutBurned / 500) * 0.5);
+    const stepsBoost = stepsToday >= 10000 ? 0.4 : stepsToday >= 7000 ? 0.25 : stepsToday >= 4000 ? 0.15 : 0;
+    const target = Math.round((targets.water + weatherBoost + workoutBoost + stepsBoost) * 10) / 10;
+
+    let reminder = 'Hydration is steady. Keep sipping through the day.';
+    if (waterTotalL >= target) {
+      reminder = 'Hydration goal achieved. Maintain normal sipping only.';
+    } else if (weatherTemp !== null && weatherBoost > 0 && workoutBurned > 0) {
+      reminder = `Global weather is ${Math.round(weatherTemp)}°C and workout load is active. Add 500ml water and electrolytes if you sweat heavily.`;
+    } else if (workoutBurned > 0) {
+      reminder = 'Workout logged today. Add 500ml water around training.';
+    } else if (weatherTemp !== null && weatherBoost > 0) {
+      reminder = `Global weather is ${Math.round(weatherTemp)}°C. Add 250–500ml extra water.`;
+    } else if (stepsToday >= 7000) {
+      reminder = 'Higher movement day. Add 250–500ml water to stay ahead.';
+    } else if (!weatherAvailable) {
+      reminder = 'Allow location access to personalize hydration with live global weather.';
+    }
+
+    return { target, weatherBoost, workoutBoost, stepsBoost, reminder };
+  }, [targets.water, workoutBurned, stepsToday, waterTotalL, weatherTemp, weatherAvailable]);
+
+  const smartWaterTarget = hydrationContext.target;
+  const waterGap = Math.max(0, smartWaterTarget - waterTotalL);
 
   const nutritionInsight = useMemo(() => {
     const proteinGap = Math.max(0, targets.protein - consumed.protein);
@@ -531,19 +610,50 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
               ))}
             </div>
             <div className="mt-4 rounded-2xl border border-sky/10 bg-sky/5 p-4">
-              <div className="flex items-center justify-between">
-                <div className="label-small text-sky">Today's Water</div>
-                <div className="text-sm font-black text-sky">{round(waterTotalL)}L</div>
-              </div>
-              {waterArr.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {waterArr.slice(-5).reverse().map((w, idx) => (
-                    <div key={String(w.time) + '-' + idx} className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-white/40">
-                      <span>{waterArr.length === 1 ? 'Daily total' : new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span className="text-sky">{waterArr.length === 1 ? round(Number(w.amount || 0) / 1000) + 'L' : '+' + w.amount + 'ml'}</span>
-                    </div>
-                  ))}
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="label-small text-sky">Today's Water</div>
+                  <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-white/40">
+                    Smart target: {smartWaterTarget.toFixed(1)}L
+                  </div>
                 </div>
+                <div className="text-right">
+                  <div className="text-sm font-black text-sky">{round(waterTotalL)}L</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+                    {waterGap > 0 ? waterGap.toFixed(1) + 'L left' : 'Goal done'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-sky/10 bg-black/20 p-3 text-[11px] font-bold leading-relaxed text-white/60">
+                {hydrationContext.reminder}
+              </div>
+
+              <div className="mt-2 text-[10px] font-black uppercase tracking-widest text-sky/80">
+                {weatherTemp !== null
+                  ? `Weather adjusted globally: ${Math.round(weatherTemp)}°C · Target ${smartWaterTarget.toFixed(1)}L`
+                  : 'Global weather hydration: allow location for live adjustment'}
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {[250, 500, 750].map(amt => (
+                  <button
+                    key={amt}
+                    onClick={() => addWater(amt)}
+                    className="rounded-xl bg-sky/10 border border-sky/20 text-sky py-3 text-[10px] font-black uppercase tracking-widest hover:bg-sky/20 active:scale-95 transition-all"
+                  >
+                    +{amt}ml
+                  </button>
+                ))}
+              </div>
+
+              {waterTotalMl > 0 && (
+                <button
+                  onClick={clearWater}
+                  className="mt-3 w-full rounded-xl bg-white/5 border border-sky/20 text-sky py-3 text-[9px] font-black uppercase tracking-widest hover:bg-sky/10 transition-all"
+                >
+                  Clear Water
+                </button>
               )}
             </div>
 
@@ -645,30 +755,6 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
             )}
           </div>
 
-          <div className="stat-card">
-            <div className="flex items-center justify-between mb-4">
-              <div className="label-small text-sky">Hydration Tracker</div>
-              {waterTotalMl > 0 && (
-                <button
-                  onClick={clearWater}
-                  className="px-3 py-2 rounded-xl bg-white/5 border border-sky/20 text-sky text-[9px] font-black uppercase tracking-widest hover:bg-sky/10 transition-all"
-                >
-                  Clear Water
-                </button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              {[250, 500, 750].map(amt => (
-                <button 
-                  key={amt}
-                  onClick={() => addWater(amt)}
-                  className="flex-1 py-4 bg-sky/10 border border-sky/20 text-sky rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-sky/20 transition-all"
-                >
-                  +{amt}ml
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="space-y-6">
