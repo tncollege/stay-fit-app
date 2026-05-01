@@ -2062,6 +2062,73 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
     showAppMessage('Direct sync is not available yet. Please use manual entry or CSV import.');
   };
 
+  const handleWhoopPdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isPdf =
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf');
+
+    if (!isPdf) {
+      showAppMessage('Please upload a WHOOP PDF report.');
+      e.target.value = '';
+      return;
+    }
+
+    const uploadRecord = {
+      id: `whoop-${Date.now()}`,
+      fileName: file.name,
+      fileSizeKb: Math.round(file.size / 1024),
+      uploadedAt: new Date().toISOString(),
+      status: 'uploaded_pending_analysis',
+      source: 'whoop_pdf',
+      importType: 'manual_pdf',
+      parser: 'gym_e_whoop_pdf_v1',
+      expectedMetrics: [
+        'recovery',
+        'strain',
+        'sleep_performance',
+        'sleep_debt',
+        'hrv',
+        'resting_heart_rate',
+      ],
+      gymEMessage:
+        'WHOOP PDF received. Gym-E can use this report after backend PDF parsing is connected.',
+    };
+
+    setData((prev: AppData) => {
+      const current = prev as any;
+      const existingWhoop = current.integrations?.whoop || {};
+      const history = Array.isArray(existingWhoop.history)
+        ? existingWhoop.history
+        : [];
+
+      return {
+        ...prev,
+        integrations: {
+          ...(current.integrations || {}),
+          whoop: {
+            ...existingWhoop,
+            connected: true,
+            source: 'manual_pdf',
+            latestPdf: uploadRecord,
+            history: [uploadRecord, ...history].slice(0, 12),
+          },
+        },
+        recovery: {
+          ...(current.recovery || {}),
+          whoopPdfStatus: uploadRecord.status,
+          latestWhoopPdf: uploadRecord,
+        },
+        lastSyncDate: new Date().toISOString(),
+      } as AppData;
+    });
+
+    showAppMessage('WHOOP PDF uploaded for Gym-E analysis.');
+    e.target.value = '';
+  };
+
   const isMetric = data.profile.unitsSystem === 'metric';
   const weightUnit = isMetric ? 'kg' : 'lbs';
 
@@ -2629,38 +2696,71 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-white/[0.02] border border-border">
+                            <div className="p-4 rounded-xl bg-white/[0.02] border border-border">
                 <div className="text-[10px] font-black uppercase tracking-widest text-lime mb-2">Manual Import</div>
                 <p className="text-[10px] opacity-50 leading-relaxed mb-4">
-                  Export Apple Health or Health Connect data to CSV and synchronize manually.
+                  Import Apple Health / Health Connect CSV, or upload a WHOOP PDF report for Gym-E recovery analysis.
                 </p>
-                <label className="block w-full py-3 bg-white/5 border border-border rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-lime/10 transition-colors cursor-pointer text-center">
-                  Import Health CSV
-                  <input 
-                    type="file" 
-                    accept=".csv" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        const text = event.target?.result as string;
-                        const rows = text.split('\n');
-                        const newSteps: Record<string, number> = { ...data.steps };
-                        rows.forEach(row => {
-                          const [date, val] = row.split(',').map(s => s.trim());
-                          if (date && val && !isNaN(Number(val))) {
-                            newSteps[date] = Number(val);
-                          }
-                        });
-                        setData((prev: AppData) => ({ ...prev, steps: newSteps }));
-                        alert(`CSV Integrated: ${Object.keys(newSteps).length - (Object.keys(data.steps || {}).length)} new data points.`);
-                      };
-                      reader.readAsText(file);
-                    }}
-                  />
-                </label>
+
+                <div className="space-y-3">
+                  <label className="block w-full py-3 bg-white/5 border border-border rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-lime/10 transition-colors cursor-pointer text-center">
+                    Import Health CSV
+                    <input 
+                      type="file" 
+                      accept=".csv" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          const text = event.target?.result as string;
+                          const rows = text.split('\n');
+                          const newSteps: Record<string, number> = { ...data.steps };
+                          rows.forEach(row => {
+                            const [date, val] = row.split(',').map(s => s.trim());
+                            if (date && val && !isNaN(Number(val))) {
+                              newSteps[date] = Number(val);
+                            }
+                          });
+                          setData((prev: AppData) => ({ ...prev, steps: newSteps }));
+                          showAppMessage(`CSV Integrated: ${Object.keys(newSteps).length - (Object.keys(data.steps || {}).length)} new data points.`);
+                        };
+                        reader.readAsText(file);
+                      }}
+                    />
+                  </label>
+
+                  <label className="block w-full p-4 bg-sky/5 border border-sky/20 rounded-xl hover:bg-sky/10 transition-colors cursor-pointer">
+                    <div className="flex items-start gap-3">
+                      <Upload size={18} className="text-sky mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-[10px] font-black uppercase tracking-wider text-sky">
+                          Upload WHOOP PDF
+                        </div>
+                        <div className="text-[10px] opacity-50 leading-relaxed mt-1 normal-case tracking-normal font-normal">
+                          Upload your WHOOP weekly/monthly report. Gym-E will prepare recovery, strain, sleep, HRV and RHR insights.
+                        </div>
+                        {(data as any).integrations?.whoop?.latestPdf && (
+                          <div className="mt-3 rounded-lg bg-black/20 border border-white/10 px-3 py-2">
+                            <div className="text-[10px] font-bold opacity-80 truncate">
+                              {(data as any).integrations.whoop.latestPdf.fileName}
+                            </div>
+                            <div className="text-[9px] opacity-40 mt-0.5">
+                              Uploaded · {(data as any).integrations.whoop.latestPdf.fileSizeKb} KB · Pending Gym-E analysis
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      className="hidden"
+                      onChange={handleWhoopPdfUpload}
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           </div>
