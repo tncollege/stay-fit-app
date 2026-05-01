@@ -646,25 +646,64 @@ else if (score >= 55) status = 'Moderate';
     };
   }, [recoveryData.score, fatigueStatus, performanceScore]);
 
-  const dynamicTargets = useMemo(() => {
-    const totalCal = targets.calories + burned + (aiControl.calorieAdjustment || 0);
-    const protein = targets.protein;
-    const remainingCals = Math.max(0, totalCal - protein * 4);
-    const carbs = Math.round((remainingCals * 0.6) / 4);
-    const fats = Math.round((remainingCals * 0.4) / 9);
-    const water =
-      targets.water +
-      (burned / 500) * 0.5 +
-      (aiControl.intensity === 'High' ? 0.5 : 0);
+  // --- Metabolic Engine V2 ---
+  // Single source of truth for Goal / Food / Exercise / AI adjustment / Remaining.
+  // Important: exercise is added only to the daily intake budget, not again in remaining.
+  const metabolicEngine = useMemo(() => {
+    const baseGoal = Math.round(targets.calories);
+    const foodCalories = Math.round(consumed.calories || 0);
+    const exerciseCalories = Math.max(0, Math.round(burned || 0));
+    const aiAdjustment = Math.round(aiControl.calorieAdjustment || 0);
+
+    const dailyBudget = Math.max(0, baseGoal + exerciseCalories + aiAdjustment);
+    const netCalories = foodCalories - exerciseCalories;
+    const remainingCalories = Math.round(dailyBudget - foodCalories);
+    const overCalories = Math.max(0, Math.abs(Math.min(0, remainingCalories)));
+
+    const proteinTarget = Math.round(targets.protein);
+    const macroCaloriesAfterProtein = Math.max(0, dailyBudget - proteinTarget * 4);
+    const carbsTarget = Math.round((macroCaloriesAfterProtein * 0.6) / 4);
+    const fatsTarget = Math.round((macroCaloriesAfterProtein * 0.4) / 9);
+
+    const waterTarget = Number(
+      (
+        targets.water +
+        (exerciseCalories / 500) * 0.5 +
+        (aiControl.intensity === 'High' ? 0.5 : 0)
+      ).toFixed(1)
+    );
+
+    const progressPct = dailyBudget
+      ? Math.min(100, Math.round((foodCalories / dailyBudget) * 100))
+      : 0;
+
+    let energyZone = 'On Track';
+    if (remainingCalories < 0) energyZone = 'Over Limit';
+    else if (progressPct < 35) energyZone = 'Under Fueled';
+    else if (progressPct > 85) energyZone = 'Nearly Complete';
 
     return {
-      calories: totalCal,
-      protein,
-      carbs,
-      fats,
-      water,
+      baseGoal,
+      foodCalories,
+      exerciseCalories,
+      aiAdjustment,
+      dailyBudget,
+      netCalories,
+      remainingCalories,
+      overCalories,
+      progressPct,
+      energyZone,
+      targets: {
+        calories: dailyBudget,
+        protein: proteinTarget,
+        carbs: carbsTarget,
+        fats: fatsTarget,
+        water: waterTarget,
+      },
     };
-  }, [targets, burned, aiControl]);
+  }, [targets, consumed.calories, burned, aiControl]);
+
+  const dynamicTargets = metabolicEngine.targets;
 
   const performanceStatus =
     performanceScore > 75
@@ -673,11 +712,8 @@ else if (score >= 55) status = 'Moderate';
       ? 'Moderate Output'
       : 'Low Output';
 
-  const netCalories = consumed.calories - burned;
-  const remaining = dynamicTargets.calories - netCalories;
-  const progressPct = dynamicTargets.calories
-    ? Math.min(100, Math.round((consumed.calories / dynamicTargets.calories) * 100))
-    : 0;
+  const remaining = metabolicEngine.remainingCalories;
+  const progressPct = metabolicEngine.progressPct;
   const proteinRemaining = Math.max(0, dynamicTargets.protein - consumed.protein);
   const waterRemaining = Math.max(0, dynamicTargets.water - waterTotal);
   const stepsRemaining = Math.max(0, stepGoal - stepsToday);
