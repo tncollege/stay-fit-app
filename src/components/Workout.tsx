@@ -78,6 +78,12 @@ type TrainingMode = 'Auto' | 'Push' | 'Pull' | 'Legs' | 'Upper' | 'Lower' | 'Rec
 
 const TRAINING_MODES: TrainingMode[] = ['Auto', 'Push', 'Pull', 'Legs', 'Upper', 'Lower', 'Recovery'];
 
+const WORKOUT_WINDOW_MAP: Record<string, { label: string; estimatedStart: string }> = {
+  morning: { label: 'Morning', estimatedStart: '07:00' },
+  afternoon: { label: 'Afternoon', estimatedStart: '14:00' },
+  evening: { label: 'Evening', estimatedStart: '18:00' },
+};
+
 const CATEGORY_IMAGES: Record<string, string> = {
   Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
   Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
@@ -193,89 +199,33 @@ function getWorkoutTotalVolume(sets: WorkoutSet[] = []) {
   return sets.reduce((total, set) => total + getSetVolume(set), 0);
 }
 
-function getWorkoutWindowStart(windowKey?: string | null) {
-  if (!windowKey) return null;
-  return WORKOUT_WINDOW_MAP[windowKey]?.estimatedStart || null;
-}
-
-function getWorkoutSummary(workouts: any[] = []) {
-  const totalSets = workouts.reduce((sum, workout) => sum + (workout.sets?.length || 0), 0);
-  const totalVolume = workouts.reduce((sum, workout) => sum + getWorkoutTotalVolume(workout.sets || []), 0);
-  const caloriesBurned = workouts.reduce((sum, workout) => sum + Number(workout.caloriesBurned || 0), 0);
-  const duration = workouts.reduce((sum, workout) => sum + Number(workout.duration || 0), 0);
-  const muscles = Array.from(new Set(workouts.flatMap((workout) => workout.muscles || []).filter(Boolean)));
-
-  return { totalSets, totalVolume, caloriesBurned, duration, muscles, sessionCount: workouts.length, title: workouts.length ? getWorkoutDisplayName(workouts[workouts.length - 1]) : 'Workout Completed' };
-}
-
-function buildPostWorkoutNutritionContext(workout: any, date: string, workoutWindow?: string | null) {
-  if (!workout) return null;
-  const caloriesBurned = Number(workout.caloriesBurned || 0);
-  const isStrength = workout.category === 'Strength';
-  return {
-    id: String(date) + '-' + String(workout.id || Date.now()),
-    date,
-    source: 'workout_completion',
-    status: 'pending_nutrition_action',
-    workoutName: getWorkoutDisplayName(workout),
-    workoutCategory: workout.category || 'Strength',
-    workoutWindow: workoutWindow || null,
-    estimatedStart: getWorkoutWindowStart(workoutWindow),
-    caloriesBurned,
-    proteinSuggestion: isStrength ? 'Prioritize 30–45g protein in your next meal.' : 'Add 20–30g protein to support recovery.',
-    carbSuggestion: caloriesBurned >= 250 ? 'Add controlled carbs to refill glycogen.' : 'Keep carbs moderate and focus on protein quality.',
-    hydrationSuggestion: caloriesBurned >= 250 ? 'Add 500–750ml water with electrolytes.' : 'Add 300–500ml water after training.',
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function savePostWorkoutNutritionContext(context: any) {
-  if (!context || typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem('stayfit_post_workout_nutrition_context', JSON.stringify(context));
-    window.dispatchEvent(new CustomEvent('stayfit-post-workout-nutrition', { detail: context }));
-  } catch (err) {
-    console.error('Post-workout nutrition sync failed', err);
-  }
-}
-
-function getWhoopSignals(data: any) {
-  const metrics = data?.whoop?.metrics || data?.integrations?.whoop?.metrics || data?.integrations?.whoop?.analysis?.metrics || data?.performanceEngine?.whoop || data?.performanceEngine?.recoverySignals || null;
-  const sleepAvg = Number(metrics?.sleepAvg30Hours ?? metrics?.sleepAvg ?? metrics?.sleepHours ?? 0);
-  const rhrAvg = Number(metrics?.restingHeartRateAvg30 ?? metrics?.rhrAvg ?? metrics?.restingHeartRate ?? 0);
-  const aerobicAvg = Number(metrics?.aerobicActivityAvg30Min ?? metrics?.aerobicAvg ?? metrics?.aerobicMinutes ?? 0);
-  const respiratoryRate = Number(metrics?.respiratoryRateAvg30 ?? metrics?.respiratoryRate ?? 0);
-  const hasWhoop = Boolean(metrics || data?.integrations?.whoop?.latestPdf?.status === 'analyzed');
-  const aerobicLow = hasWhoop && aerobicAvg > 0 && aerobicAvg < 22;
-  return { hasWhoop, sleepAvg, rhrAvg, aerobicAvg, respiratoryRate, aerobicLow };
-}
-
-function buildWorkoutEngineNote(whoopSignals: any, readiness: number, fatigueStatus: string) {
-  if (!whoopSignals?.hasWhoop) return 'Weekly plan synced · Intensity adjusted by readiness';
-  if (readiness >= 80 && fatigueStatus === 'Normal Fatigue') {
-    return whoopSignals.aerobicLow ? 'WHOOP-adjusted high readiness · Add 10–15 min Zone 2 finisher' : 'WHOOP-adjusted high readiness · Good day to progress load or reps';
-  }
-  if (readiness < 60 || fatigueStatus === 'High Fatigue') return 'WHOOP-adjusted recovery day · Reduce volume and avoid max attempts';
-  return whoopSignals.aerobicLow ? 'WHOOP-adjusted moderate day · Controlled volume + light Zone 2' : 'WHOOP-adjusted controlled volume · Keep 1–3 reps in reserve';
-}
-
 function getPlanTrainingMode(plan: any): TrainingMode | null {
   if (!plan) return null;
 
-  const planText = [
-    plan.planName,
-    ...(plan.exercises || []).flatMap((exercise: any) => [exercise?.name, exercise?.bodyPart]),
-  ]
+  const planName = String(plan.planName || '').toLowerCase();
+  const exerciseText = (plan.exercises || [])
+    .flatMap((exercise: any) => [exercise?.name, exercise?.bodyPart])
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
+  const planText = `${planName} ${exerciseText}`.trim();
 
-  if (!planText.trim()) return null;
+  if (!planText) return null;
 
+  // CRITICAL: respect the actual daily plan name first.
+  // Example: "Legs + Core" contains "Leg Curl" in exercises, but it must never become Pull.
+  if (/recovery|mobility|stretch|yoga|walk/.test(planName)) return 'Recovery';
+  if (/leg|lower|quad|hamstring|glute|calf|squat|lunge|core/.test(planName)) return 'Legs';
+  if (/push|chest|tricep|shoulder|bench|press/.test(planName)) return 'Push';
+  if (/pull|back|bicep|row|pulldown|pullup|chinup|deadlift/.test(planName)) return 'Pull';
+  if (/upper/.test(planName)) return 'Upper';
+  if (/lower/.test(planName)) return 'Lower';
+
+  // Then infer from exercises. Legs are checked before Pull because "Leg Curl" is a leg exercise.
   if (/recovery|mobility|stretch|yoga|walk/.test(planText)) return 'Recovery';
-  if (/pull|back|bicep|row|pulldown|pullup|chinup|deadlift|curl/.test(planText)) return 'Pull';
+  if (/leg|lower|quad|hamstring|glute|calf|squat|lunge|leg press|leg curl|leg extension|free squat|core|crunch|leg raise/.test(planText)) return 'Legs';
   if (/push|chest|tricep|shoulder|bench|press|dip|fly|raise/.test(planText)) return 'Push';
-  if (/leg|lower|quad|hamstring|glute|calf|squat|lunge|leg press/.test(planText)) return 'Legs';
+  if (/pull|back|bicep|row|pulldown|pullup|chinup|deadlift|barbell curl|dumbbell curl|hammer curl/.test(planText)) return 'Pull';
   if (/upper/.test(planText)) return 'Upper';
   if (/lower/.test(planText)) return 'Lower';
 
@@ -442,11 +392,13 @@ export default function WorkoutView({
   setData,
   viewDate,
   setViewDate,
+  performanceEngine,
 }: {
   data: AppData;
   setData: any;
   viewDate: string;
   setViewDate: (d: string) => void;
+  performanceEngine?: any;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>('strength');
   const [selectedMuscle, setSelectedMuscle] = useState('Chest');
@@ -509,6 +461,29 @@ export default function WorkoutView({
   const [planBodyPartInput, setPlanBodyPartInput] = useState('Chest');
 
   const workoutsArr = data.workouts?.[viewDate] || [];
+  const todaysWorkoutSchedule = (data as any).workoutSchedule?.[viewDate] || {};
+  const selectedWorkoutWindow = todaysWorkoutSchedule.window || performanceEngine?.workout?.window || '';
+  const workoutStartTime = todaysWorkoutSchedule.estimatedStart || todaysWorkoutSchedule.startTime || performanceEngine?.workout?.startTime || null;
+  const setWorkoutWindowForDate = (windowKey: string) => {
+    const selected = WORKOUT_WINDOW_MAP[windowKey];
+    if (!selected) return;
+    setData((prev: any) => ({
+      ...prev,
+      workoutSchedule: {
+        ...(prev.workoutSchedule || {}),
+        [viewDate]: {
+          ...(prev.workoutSchedule?.[viewDate] || {}),
+          window: windowKey,
+          estimatedStart: selected.estimatedStart,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    }));
+    try {
+      localStorage.setItem('stayfit_workout_window_context', JSON.stringify({ date: viewDate, window: windowKey, estimatedStart: selected.estimatedStart }));
+    } catch {}
+    showWorkoutMessage(`Workout window set: ${selected.label}`);
+  };
   const personalExercises = data.personalExercises || [];
   
 const allWorkouts = useMemo<Workout[]>(() => {
@@ -568,6 +543,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
       : 'Normal Fatigue';
 
   const workoutReadiness = useMemo(() => {
+    if (performanceEngine?.readiness?.score) return Math.round(Number(performanceEngine.readiness.score));
     const sleepScore = Number(data.recovery?.[viewDate]?.sleep || 75);
     const strainScore =
       todayWorkoutBurn > 0 || stepsToday > 0
@@ -593,49 +569,12 @@ const allWorkouts = useMemo<Workout[]>(() => {
     proteinToday,
     proteinTarget,
     waterTotal,
+    performanceEngine,
   ]);
 
-  const whoopSignals = useMemo(() => getWhoopSignals(data), [data]);
-
-  const engineReadiness = Number(
-    (data as any)?.performanceEngine?.readiness?.score ??
-      (data as any)?.readiness?.score ??
-      workoutReadiness
-  );
-
-  const effectiveFatigueStatus =
-    (data as any)?.performanceEngine?.workout?.fatigueStatus || fatigueStatus;
-
-  const workoutEngineNote = useMemo(
-    () => buildWorkoutEngineNote(whoopSignals, engineReadiness, effectiveFatigueStatus),
-    [whoopSignals, engineReadiness, effectiveFatigueStatus]
-  );
-
-  const selectedWorkoutWindow = (data as any).workoutSchedule?.[viewDate]?.window || '';
-  const selectedWorkoutEstimatedStart =
-    (data as any).workoutSchedule?.[viewDate]?.estimatedStart || getWorkoutWindowStart(selectedWorkoutWindow);
-
-  const setWorkoutWindowForDate = (windowKey: 'morning' | 'afternoon' | 'evening') => {
-    const windowData = WORKOUT_WINDOW_MAP[windowKey];
-    setData((prev: AppData) => ({
-      ...prev,
-      workoutSchedule: {
-        ...((prev as any).workoutSchedule || {}),
-        [viewDate]: {
-          ...((prev as any).workoutSchedule?.[viewDate] || {}),
-          window: windowKey,
-          label: windowData.label,
-          estimatedStart: windowData.estimatedStart,
-          updatedAt: new Date().toISOString(),
-        },
-      },
-    }));
-    showWorkoutMessage(windowData.label + ' workout window saved');
-  };
-
   const recommendedMode = useMemo(
-    () => getRecommendedTrainingMode(engineReadiness, effectiveFatigueStatus, todayName, todayPlan),
-    [engineReadiness, effectiveFatigueStatus, todayName, todayPlan]
+    () => getRecommendedTrainingMode(workoutReadiness, fatigueStatus, todayName, todayPlan),
+    [workoutReadiness, fatigueStatus, todayName, todayPlan]
   );
 
   const activeTrainingMode = trainingMode === 'Auto' ? recommendedMode : trainingMode;
@@ -645,16 +584,19 @@ const allWorkouts = useMemo<Workout[]>(() => {
   }, [todayPlan?.planName, activeTrainingMode]);
 
   const workoutPrescription = useMemo(() => {
-    const base = getModePrescription(activeTrainingMode, engineReadiness, effectiveFatigueStatus);
+    const base = getModePrescription(activeTrainingMode, workoutReadiness, fatigueStatus);
     if (!todayPlan?.planName) return base;
     return {
       ...base,
       title:
         activeTrainingMode === 'Recovery'
-          ? workoutEnginePlanName + ' Recovery Session'
-          : workoutEnginePlanName + ' Hypertrophy Session',
+          ? `${workoutEnginePlanName} Recovery Session`
+          : `${workoutEnginePlanName} Hypertrophy Session`,
     };
-  }, [activeTrainingMode, engineReadiness, effectiveFatigueStatus, todayPlan?.planName, workoutEnginePlanName]);
+  }, [activeTrainingMode, workoutReadiness, fatigueStatus, todayPlan?.planName, workoutEnginePlanName]);
+
+  const workoutRecommendationLabel = trainingMode === 'Auto' ? workoutEnginePlanName : activeTrainingMode;
+  const hasLoggedTodayWorkout = workoutsArr.length > 0;
 
   const startTrainingSession = () => {
     if (sessionActive) return;
@@ -662,21 +604,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
     setSessionActive(true);
     setSessionStartedAt(now);
     setSessionElapsed(0);
-
-    setData((prev: AppData) => ({
-      ...prev,
-      activeWorkoutSession: {
-        date: viewDate,
-        startedAt: now,
-        trainingMode: activeTrainingMode,
-        planName: workoutEnginePlanName,
-        workoutWindow: selectedWorkoutWindow || null,
-        estimatedStart: selectedWorkoutEstimatedStart || null,
-        status: 'active',
-      },
-    }));
-
-    showWorkoutMessage(activeTrainingMode + ' session started');
+    showWorkoutMessage(`${activeTrainingMode} session started`);
   };
 
   const resetTrainingSession = () => {
@@ -684,10 +612,6 @@ const allWorkouts = useMemo<Workout[]>(() => {
     setSessionStartedAt(null);
     setSessionElapsed(0);
     setTimerActive(false);
-    setData((prev: AppData) => ({
-      ...prev,
-      activeWorkoutSession: undefined,
-    }));
     showWorkoutMessage('Session reset');
   };
 
@@ -728,18 +652,6 @@ const allWorkouts = useMemo<Workout[]>(() => {
     setPlanExerciseInput('');
     setPlanBodyPartInput('Chest');
   }, [editingPlanDay, workoutPlans]);
-
-  useEffect(() => {
-    const activeSession = (data as any).activeWorkoutSession;
-    if (activeSession?.date === viewDate && activeSession?.status === 'active') {
-      setSessionActive(true);
-      setSessionStartedAt(Number(activeSession.startedAt || Date.now()));
-    } else if (activeSession?.date && activeSession.date !== viewDate) {
-      setSessionActive(false);
-      setSessionStartedAt(null);
-      setSessionElapsed(0);
-    }
-  }, [(data as any).activeWorkoutSession, viewDate]);
 
   const getExerciseOptions = (category: string, subcategory?: string) => {
     let fromBase: string[] = [];
@@ -1059,27 +971,15 @@ const allWorkouts = useMemo<Workout[]>(() => {
     setSavingWorkout(true);
     try {
       await saveWorkout(viewDate, newWorkout);
-      const nutritionContext = buildPostWorkoutNutritionContext(
-        newWorkout,
-        viewDate,
-        selectedWorkoutWindow || null
-      );
-
       setData((prev: AppData) => ({
         ...prev,
         workouts: {
           ...prev.workouts,
           [viewDate]: [...(prev.workouts[viewDate] || []), newWorkout],
         },
-        activeWorkoutSession: undefined,
-        nutritionTriggers: {
-          ...((prev as any).nutritionTriggers || {}),
-          postWorkout: nutritionContext,
-        },
       }));
 
-      savePostWorkoutNutritionContext(nutritionContext);
-      showWorkoutMessage('Workout saved successfully · Nutrition updated');
+      showWorkoutMessage('Workout saved successfully');
       window.setTimeout(() => {
         document.getElementById('workout-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 200);
@@ -1240,12 +1140,6 @@ const allWorkouts = useMemo<Workout[]>(() => {
     }));
   };
 
-  const hasLoggedTodayWorkout = workoutsArr.length > 0;
-  const todayWorkoutSummary = getWorkoutSummary(workoutsArr);
-  const latestWorkout = workoutsArr[workoutsArr.length - 1];
-  const postWorkoutNutritionContext = latestWorkout
-    ? buildPostWorkoutNutritionContext(latestWorkout, viewDate, selectedWorkoutWindow || null)
-    : null;
   return (
     <>
       {timerActive && (
@@ -1303,12 +1197,11 @@ const allWorkouts = useMemo<Workout[]>(() => {
           setTrainingMode={setTrainingMode}
           activeTrainingMode={activeTrainingMode}
           recommendedMode={recommendedMode}
-          readiness={engineReadiness}
-          fatigueStatus={effectiveFatigueStatus}
+          recommendationLabel={workoutRecommendationLabel}
+          readiness={workoutReadiness}
+          fatigueStatus={fatigueStatus}
           weeklyTrainingLoad={weeklyTrainingLoad}
           prescription={workoutPrescription}
-          engineNote={workoutEngineNote}
-          whoopSignals={whoopSignals}
           sessionActive={sessionActive}
           sessionElapsed={sessionElapsed}
           startTrainingSession={startTrainingSession}
@@ -1320,6 +1213,9 @@ const allWorkouts = useMemo<Workout[]>(() => {
             <div className="stat-card space-y-8">
               <TabSwitcher activeTab={activeTab} setActiveTab={setActiveTab} />
 
+              {hasLoggedTodayWorkout ? (
+                <TodayWorkoutSummary workouts={workoutsArr} workoutStartTime={workoutStartTime} onExtraSession={startTrainingSession} />
+              ) : (
               <WeeklyPlanSection
                 dayNames={dayNames}
                 todayName={todayName}
@@ -1349,15 +1245,12 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 completedPlanExercises={completedPlanExercises}
                 togglePlanExerciseComplete={togglePlanExerciseComplete}
                 currentSets={currentSets}
+                selectedWorkoutWindow={selectedWorkoutWindow}
+                workoutStartTime={workoutStartTime}
+                setWorkoutWindowForDate={setWorkoutWindowForDate}
                 setShowTipsFor={setShowTipsFor}
-                hasLoggedTodayWorkout={hasLoggedTodayWorkout}
-                todayWorkoutSummary={todayWorkoutSummary}
-                latestWorkout={latestWorkout}
-                postWorkoutNutritionContext={postWorkoutNutritionContext}
-                startAdditionalSession={startTodayPlan}
-                workoutWindow={selectedWorkoutWindow}
-                setWorkoutWindow={setWorkoutWindowForDate}
               />
+              )}
 
               <AISearchBar
                 searchQuery={searchQuery}
@@ -1413,8 +1306,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                   cardioExtraValue={cardioExtraValue}
                   setCardioExtraValue={setCardioExtraValue}
                   handleAddCardio={handleAddCardio}
-                  readiness={engineReadiness}
-                  fatigueStatus={effectiveFatigueStatus}
+                  readiness={workoutReadiness}
+                  fatigueStatus={fatigueStatus}
                 />
               ) : activeTab === 'sports' ? (
                 <SportsYogaPanel
@@ -1427,8 +1320,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                   setCardioDuration={setCardioDuration}
                   getExerciseOptions={getExerciseOptions}
                   handleSubmit={() => handleAddSportsOrYoga('Sports')}
-                  readiness={engineReadiness}
-                  fatigueStatus={effectiveFatigueStatus}
+                  readiness={workoutReadiness}
+                  fatigueStatus={fatigueStatus}
                 />
               ) : (
                 <SportsYogaPanel
@@ -1441,8 +1334,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                   setCardioDuration={setCardioDuration}
                   getExerciseOptions={getExerciseOptions}
                   handleSubmit={() => handleAddSportsOrYoga('Yoga')}
-                  readiness={engineReadiness}
-                  fatigueStatus={effectiveFatigueStatus}
+                  readiness={workoutReadiness}
+                  fatigueStatus={fatigueStatus}
                 />
               )}
             </div>
@@ -1552,6 +1445,7 @@ function WorkoutEnginePanel({
   setTrainingMode,
   activeTrainingMode,
   recommendedMode,
+  recommendationLabel,
   readiness,
   fatigueStatus,
   weeklyTrainingLoad,
@@ -1560,8 +1454,6 @@ function WorkoutEnginePanel({
   sessionElapsed,
   startTrainingSession,
   resetTrainingSession,
-  engineNote,
-  whoopSignals,
 }: any) {
   const readinessColor = readiness >= 75 ? 'text-lime' : readiness >= 55 ? 'text-yellow-400' : 'text-pink';
 
@@ -1579,7 +1471,7 @@ function WorkoutEnginePanel({
             {prescription.instruction}
           </p>
           <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-sky">
-            {engineNote || 'Weekly plan synced · Intensity adjusted by readiness'}
+            Weekly plan synced · Intensity adjusted by readiness
           </p>
         </div>
 
@@ -1613,7 +1505,7 @@ function WorkoutEnginePanel({
         <MiniMetric label="Intensity" value={prescription.intensity} />
         <MiniMetric label="Volume" value={prescription.volume} />
         <MiniMetric label="Rep Target" value={prescription.reps} />
-        <MiniMetric label="Recommendation" value={recommendedMode} />
+        <MiniMetric label="Recommendation" value={recommendationLabel || recommendedMode} />
       </div>
 
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
@@ -1628,7 +1520,7 @@ function WorkoutEnginePanel({
                   : 'bg-white/[0.03] border-border text-white/40 hover:text-white hover:border-lime/30'
               }`}
             >
-              {mode === 'Auto' ? `Auto: ${recommendedMode}` : mode}
+              {mode === 'Auto' ? `Auto: ${recommendationLabel || recommendedMode}` : mode}
             </button>
           ))}
         </div>
@@ -1737,6 +1629,43 @@ function AISearchBar({ searchQuery, setSearchQuery, handleAiSearch, aiSearching,
   );
 }
 
+
+function TodayWorkoutSummary({ workouts, workoutStartTime, onExtraSession }: any) {
+  const totalSets = (workouts || []).reduce((sum: number, w: any) => sum + ((w.sets || []).length || Number(w.totalSets || 0)), 0);
+  const totalVolume = (workouts || []).reduce((sum: number, w: any) => sum + Number(w.volume || w.totalVolume || 0), 0);
+  const calories = (workouts || []).reduce((sum: number, w: any) => sum + Number(w.caloriesBurned || w.calories || 0), 0);
+  const title = getWorkoutDisplayName(workouts?.[0]) || 'Workout Completed';
+
+  return (
+    <div className="rounded-[2rem] border border-lime/20 bg-lime/[0.04] p-5 space-y-5">
+      <div>
+        <div className="label-small text-lime mb-2">Today’s Workout Summary</div>
+        <h3 className="text-2xl font-black tracking-tight">{title}</h3>
+        <p className="text-[11px] text-white/40 mt-1">
+          Today’s workout is already logged. The plan is hidden now; focus on recovery, hydration and post-workout nutrition.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard label="Sessions" value={(workouts || []).length} />
+        <SummaryCard label="Sets" value={totalSets || '—'} />
+        <SummaryCard label="Volume" value={totalVolume ? `${Math.round(totalVolume)} kg` : '—'} />
+        <SummaryCard label="Calories" value={calories ? `+${Math.round(calories)}` : '—'} />
+      </div>
+      <div className="rounded-2xl border border-sky/20 bg-sky/5 p-4 text-[11px] text-sky font-bold leading-relaxed">
+        {workoutStartTime
+          ? `Nutrition Engine can now use your ${workoutStartTime} workout window for post-workout meal guidance.`
+          : 'Set a workout window next time so Nutrition can time pre/post-workout meals automatically.'}
+      </div>
+      <button
+        onClick={onExtraSession}
+        className="w-full rounded-2xl bg-white/[0.04] border border-border py-3 text-[10px] font-black uppercase tracking-widest text-white/60 hover:text-white"
+      >
+        Start Additional Session
+      </button>
+    </div>
+  );
+}
+
 function WeeklyPlanSection(props: any) {
   const {
     dayNames,
@@ -1767,13 +1696,9 @@ function WeeklyPlanSection(props: any) {
     completedPlanExercises,
     togglePlanExerciseComplete,
     currentSets = [],
-    hasLoggedTodayWorkout = false,
-    todayWorkoutSummary = {},
-    latestWorkout = null,
-    postWorkoutNutritionContext = null,
-    startAdditionalSession,
-    workoutWindow = '',
-    setWorkoutWindow,
+    selectedWorkoutWindow,
+    workoutStartTime,
+    setWorkoutWindowForDate,
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
@@ -1787,29 +1712,6 @@ const { setShowTipsFor } = props;
       ? `Yesterday you logged ${yesterdaySummary}. Today is planned as ${todayPlan.planName}. Update the weekly plan if your split changed.`
       : '';
 
-  if (hasLoggedTodayWorkout) {
-    return (
-      <div data-workout-summary-section className="rounded-[2rem] border border-lime/20 bg-lime/[0.03] p-5 space-y-5">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div>
-            <div className="label-small text-lime mb-2">Today’s Workout Summary • {todayName}</div>
-            <h3 className="text-2xl font-black tracking-tight">{todayWorkoutSummary.title || getWorkoutDisplayName(latestWorkout)}</h3>
-            <p className="text-[11px] text-white/40 mt-1">Workout logged. Focus now on recovery, hydration and the next meal.</p>
-          </div>
-          <button onClick={startAdditionalSession} className="px-5 py-3 rounded-xl bg-white/[0.04] border border-border text-white/60 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all">Start Additional Session</button>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <SummaryCard label="Sessions" value={todayWorkoutSummary.sessionCount || 0} />
-          <SummaryCard label="Sets" value={todayWorkoutSummary.totalSets || 0} />
-          <SummaryCard label="Volume" value={(todayWorkoutSummary.totalVolume || 0) + ' kg'} />
-          <SummaryCard label="Burn" value={(todayWorkoutSummary.caloriesBurned || 0) + ' kcal'} />
-        </div>
-        {postWorkoutNutritionContext && (
-          <div className="rounded-2xl border border-sky/20 bg-sky/5 p-4 text-[11px] text-sky font-bold leading-relaxed">Nutrition sync active: {postWorkoutNutritionContext.proteinSuggestion} {postWorkoutNutritionContext.hydrationSuggestion}</div>
-        )}
-      </div>
-    );
-  }
   return (
     <div data-weekly-plan-section className="rounded-[2rem] border border-lime/20 bg-lime/[0.03] p-5 space-y-5">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
@@ -1838,28 +1740,36 @@ const { setShowTipsFor } = props;
         </div>
       </div>
 
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">When will you train today?</div>
+        <div className="grid grid-cols-3 gap-2">
+          {Object.entries(WORKOUT_WINDOW_MAP).map(([key, item]: any) => (
+            <button
+              key={key}
+              onClick={() => setWorkoutWindowForDate?.(key)}
+              className={`rounded-xl px-3 py-3 text-[10px] font-black uppercase tracking-widest border transition-all ${
+                selectedWorkoutWindow === key
+                  ? 'bg-lime text-dark border-lime shadow-lg shadow-lime/20'
+                  : 'bg-white/[0.03] text-white/50 border-border hover:text-white'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[11px] text-white/40 mt-3">
+          {workoutStartTime
+            ? `Nutrition will use approx. ${workoutStartTime} for pre/post-workout guidance.`
+            : 'Select a workout window to unlock pre/post-workout meal guidance.'}
+        </div>
+      </div>
+
       {yesterdayNote && (
         <div className="rounded-2xl border border-sky/20 bg-sky/5 p-4 text-[11px] text-sky font-bold leading-relaxed">
           {yesterdayNote}
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/10 bg-black/20 p-4 space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-widest text-white/40">When will you train today?</div>
-            <div className="text-[11px] text-white/35 mt-1">Select a workout window to unlock pre/post-workout meal guidance.</div>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {(['morning', 'afternoon', 'evening'] as const).map((key) => (
-              <button key={key} onClick={() => setWorkoutWindow?.(key)} className={`px-4 py-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${workoutWindow === key ? 'bg-lime text-dark border-lime shadow-lg shadow-lime/20' : 'bg-white/[0.03] border-border text-white/40 hover:text-white hover:border-lime/30'}`}>{WORKOUT_WINDOW_MAP[key].label}</button>
-            ))}
-          </div>
-        </div>
-        {workoutWindow && (
-          <div className="rounded-xl bg-lime/10 border border-lime/20 px-4 py-3 text-[11px] text-lime font-bold">{WORKOUT_WINDOW_MAP[workoutWindow]?.label} window saved · estimated start {WORKOUT_WINDOW_MAP[workoutWindow]?.estimatedStart}. Nutrition can now trigger pre/post guidance.</div>
-        )}
-      </div>
       {plannedExercises.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {plannedExercises.map((ex: any, idx: number) => (
