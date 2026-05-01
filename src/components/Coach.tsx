@@ -164,6 +164,12 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
     }
   };
 
+  const askWithPrompt = async (prompt: string) => {
+    setActiveSubTab('chat');
+    setQuestion(prompt);
+    await handleAsk(prompt);
+  };
+
   const isError = (plan: string) => {
     if (!plan) return true;
     const up = plan.toUpperCase();
@@ -305,9 +311,9 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
           <p className="text-sm font-bold text-white/80">{coachTone}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => handleAsk('Generate my best workout recommendation for today using my recovery, fatigue, nutrition and recent workouts.')} className="px-4 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest">Today Workout</button>
-          <button onClick={() => handleAsk('Fix my diet for the rest of today using my current calories, protein, macros and goal.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Fix Diet</button>
-          <button onClick={() => handleAsk('Give me a recovery protocol for tonight based on my recovery score, fatigue and training load.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Recover Me</button>
+          <button onClick={() => askWithPrompt('Generate my best workout recommendation for today using my recovery, fatigue, nutrition and recent workouts.')} className="px-4 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest">Today Workout</button>
+          <button onClick={() => askWithPrompt('Fix my diet for the rest of today using my current calories, protein, macros and goal.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Fix Diet</button>
+          <button onClick={() => askWithPrompt('Give me a recovery protocol for tonight based on my recovery score, fatigue and training load.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Recover Me</button>
         </div>
       </div>
 
@@ -383,12 +389,12 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <QuickAction icon={<Utensils />} label="Optimize my protein intake" onClick={() => handleAsk("How should I optimize my protein intake for my current goal, weight, meals and protein gap?")} />
-                <QuickAction icon={<Activity />} label="Training recovery tips" onClick={() => handleAsk("Based on my recent workouts, recovery and weekly load, what should I train today?")} />
-                <QuickAction icon={<Brain />} label="Focus & motivation" onClick={() => handleAsk("I am feeling demotivated. Give me tactical advice based on my current app data and today's status.")} />
-                <QuickAction icon={<Dumbbell />} label="Plateau breaking" onClick={() => handleAsk("I feel like I have hit a plateau. Analyze my calories, protein, workouts and recovery and suggest adjustments.")} />
+                <QuickAction icon={<Utensils />} label="Optimize my protein intake" onClick={() => askWithPrompt("How should I optimize my protein intake for my current goal, weight, meals and protein gap?")} />
+                <QuickAction icon={<Activity />} label="Training recovery tips" onClick={() => askWithPrompt("Based on my recent workouts, recovery and weekly load, what should I train today?")} />
+                <QuickAction icon={<Brain />} label="Focus & motivation" onClick={() => askWithPrompt("I am feeling demotivated. Give me tactical advice based on my current app data and today's status.")} />
+                <QuickAction icon={<Dumbbell />} label="Plateau breaking" onClick={() => askWithPrompt("I feel like I have hit a plateau. Analyze my calories, protein, workouts and recovery and suggest adjustments.")} />
                 <QuickAction icon={<Pill />} label="Supplement protocol" onClick={() => setActiveSubTab('supplement')} />
-                <QuickAction icon={<Info />} label="Metabolic flexibility" onClick={() => handleAsk("Explain how I can improve metabolic flexibility using my current diet, workouts and recovery status.")} />
+                <QuickAction icon={<Info />} label="Metabolic flexibility" onClick={() => askWithPrompt("Explain how I can improve metabolic flexibility using my current diet, workouts and recovery status.")} />
               </div>
             </motion.div>
           )}
@@ -421,16 +427,16 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                         <Dumbbell size={32} className="text-lime" />
                       </div>
                       <div className="space-y-2 font-bold px-4">
-                        <h3 className="text-xl text-pink uppercase tracking-tighter">Neural Link Offline</h3>
+                        <h3 className="text-xl text-pink uppercase tracking-tighter">AI Plan Ready</h3>
                         <p className="text-sm max-w-sm mt-2 opacity-50 leading-relaxed">
-                          {workoutPlan || `Initialize your AI training protocol tailored to your ${data.profile.goal}.`}
+                          `Generate your personalized training protocol based on today’s recovery, fatigue and goal.`
                         </p>
                       </div>
                       <button 
                         onClick={handleGenerateWorkoutPlan}
                         className="px-10 py-5 bg-lime text-dark font-black rounded-2xl uppercase text-[11px] tracking-[0.25em] shadow-2xl shadow-lime/20 hover:scale-105 active:scale-95 transition-all"
                       >
-                        {workoutPlan ? 'Re-Initialize Protocol' : 'Sync Training Matrix'}
+                        {workoutPlan ? 'Regenerate Plan' : 'Generate Plan'}
                       </button>
                     </div>
                   ) : isGeneratingPlan ? (
