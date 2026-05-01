@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Camera, Search, Plus, Trash2, ChevronRight, X, Scan, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppData, Meal } from '../lib/types';
@@ -112,6 +112,67 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   const qtyValue = qtyInput.trim() === '' ? 0 : Number(qtyInput) || 0;
   const saveQtyValue = qtyInput.trim() === '' ? 1 : Number(qtyInput) || 1;
 
+  const consumed = useMemo(() => {
+    return mealsArr.reduce(
+      (acc, meal) => ({
+        calories: acc.calories + Number(meal.calories || 0),
+        protein: acc.protein + Number(meal.protein || 0),
+        carbs: acc.carbs + Number(meal.carbs || 0),
+        fats: acc.fats + Number(meal.fats || 0),
+      }),
+      { calories: 0, protein: 0, carbs: 0, fats: 0 }
+    );
+  }, [mealsArr]);
+
+  const targets = useMemo(() => {
+    const w = data.profile.currentWeight ?? 70;
+    let baseCalories = w * 30;
+
+    if (data.profile.goal === 'Fat Loss') baseCalories -= 500;
+    if (data.profile.goal === 'Muscle Gain') baseCalories += 300;
+
+    return {
+      calories: Math.round(baseCalories),
+      protein: Math.round(w * 2),
+      carbs: Math.round((baseCalories * 0.4) / 4),
+      fats: Math.round((baseCalories * 0.3) / 9),
+      water: 3.5,
+    };
+  }, [data.profile]);
+
+  const waterTotalL = waterTotalMl / 1000;
+  const waterGap = Math.max(0, targets.water - waterTotalL);
+
+  const nutritionInsight = useMemo(() => {
+    const proteinGap = targets.protein - consumed.protein;
+    const calorieGap = targets.calories - consumed.calories;
+
+    if (proteinGap > 50) {
+      return 'Protein is low today. Add around ' + Math.round(proteinGap) + 'g more protein before dinner.';
+    }
+
+    if (calorieGap > 800) {
+      return 'You are under-eating by around ' + Math.round(calorieGap) + ' kcal. Add a balanced meal.';
+    }
+
+    if (consumed.carbs > targets.carbs * 1.2) {
+      return 'Carbs are running high. Keep the next meal protein-focused.';
+    }
+
+    if (consumed.fats > targets.fats * 1.2) {
+      return 'Fats are running high. Keep the next meal lean and protein-focused.';
+    }
+
+    return 'Nutrition is on track today.';
+  }, [consumed, targets]);
+
+  const mealSuggestion = useMemo(() => {
+    const hour = new Date().getHours();
+
+    if (hour < 12) return 'Morning focus: protein-rich breakfast + hydration.';
+    if (hour < 17) return 'Afternoon focus: balanced carbs + protein for energy.';
+    return 'Evening focus: lighter dinner with high protein and recovery foods.';
+  }, []);
   // Conversions for non-standard serving sizes
   const CONVERSIONS: Record<string, number> = {
     '100g': 100,
@@ -406,7 +467,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
             <div className="mt-4 rounded-2xl border border-sky/10 bg-sky/5 p-4">
               <div className="flex items-center justify-between">
                 <div className="label-small text-sky">Today's Water</div>
-                <div className="text-sm font-black text-sky">{round(waterTotalMl / 1000)}L</div>
+                <div className="text-sm font-black text-sky">{round(waterTotalL)}L</div>
               </div>
               {waterArr.length > 0 && (
                 <div className="mt-3 space-y-2">
@@ -551,6 +612,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                     try {
                       await saveWaterTotal(viewDate, newTotal, time);
                       console.log('Water total saved to Supabase ✅');
+                      showNutritionMessage(`${amt}ml water added`);
                     } catch (err) {
                       console.error('Water save error ❌', err);
                     }
@@ -565,6 +627,32 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
         </div>
 
         <div className="space-y-6">
+          <div className="rounded-2xl border border-lime/20 bg-lime/10 p-5">
+            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime mb-2">
+              Gym-E Nutrition Insight
+            </div>
+            <p className="text-sm font-bold text-white leading-relaxed">
+              {nutritionInsight}
+            </p>
+            <p className="mt-2 text-[11px] text-white/40 font-bold uppercase tracking-widest">
+              {mealSuggestion}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-[10px] font-black uppercase tracking-widest">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-white/50">
+                Protein left
+                <div className="mt-1 text-lime text-sm">
+                  {Math.max(0, Math.round(targets.protein - consumed.protein))}g
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-white/50">
+                Water left
+                <div className="mt-1 text-sky text-sm">
+                  {waterGap > 0 ? waterGap.toFixed(1) + 'L' : 'Done'}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="stat-card">
             <h3 className="label-small mb-6 text-pink">Daily Intake Log</h3>
             <div className="space-y-3">
