@@ -524,9 +524,78 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
     ? Math.min(100, (waterTotal / targets.water) * 100)
     : 0;
 
+  // WHOOP Dashboard Merge Engine
+  // WHOOP PDF data should behave like a background health signal, not a separate report card.
+  // These values are consumed by Readiness, Gym-E decision, hydration and macro targets.
+  const dashboardWhoopSignals = useMemo(() => {
+    const current = data as any;
+    const metrics = current.integrations?.whoop?.metrics || current.recovery?.whoopMetrics || null;
+
+    if (!metrics) {
+      return {
+        hasWhoop: false,
+        recoveryScore: null as number | null,
+        sleepAvg: null as number | null,
+        rhrAvg: null as number | null,
+        respiratoryRate: null as number | null,
+        aerobicAvg: null as number | null,
+        hydrationBoost: 0,
+        proteinBoost: 0,
+        calorieAdjustment: 0,
+        action: null as string | null,
+        insight: null as string | null,
+      };
+    }
+
+    const sleepAvg = Number(metrics.sleepAvg30Hours || 0) || null;
+    const rhrAvg = Number(metrics.restingHeartRateAvg30 || 0) || null;
+    const respiratoryRate = Number(metrics.respiratoryRateAvg30 || 0) || null;
+    const aerobicAvg = Number(metrics.aerobicActivityAvg30Min || 0) || null;
+    const marchRhr = Number(metrics.restingHeartRateMarchAvg || 0) || null;
+    const aprilRhr = Number(metrics.restingHeartRateAprilAvg || 0) || null;
+
+    const sleepScore = sleepAvg ? Math.min(100, Math.round((sleepAvg / 7) * 100)) : 60;
+    const rhrScore = rhrAvg ? Math.max(40, Math.min(100, Math.round(100 - Math.max(0, rhrAvg - 60) * 3))) : 60;
+    const cardioScore = aerobicAvg ? Math.min(100, Math.round((aerobicAvg / 22) * 100)) : 50;
+    const trendBonus = marchRhr && aprilRhr && aprilRhr < marchRhr ? 8 : 0;
+    const recoveryScore = Math.min(100, Math.round((sleepScore * 0.4) + (rhrScore * 0.35) + (cardioScore * 0.25) + trendBonus));
+
+    const sleepLow = Boolean(sleepAvg && sleepAvg < 6.5);
+    const aerobicLow = Boolean(aerobicAvg && aerobicAvg < 22);
+    const rhrStrong = Boolean(rhrAvg && rhrAvg <= 65);
+
+    return {
+      hasWhoop: true,
+      recoveryScore,
+      sleepAvg,
+      rhrAvg,
+      respiratoryRate,
+      aerobicAvg,
+      hydrationBoost: aerobicLow ? 0.3 : 0.15,
+      proteinBoost: sleepLow ? 15 : 10,
+      calorieAdjustment: sleepLow ? -100 : 0,
+      action: sleepLow
+        ? 'Protect sleep and keep training controlled today'
+        : aerobicLow
+        ? 'Add 10–15 min Zone 2 after strength training'
+        : rhrStrong
+        ? 'Recovery supports strength training today'
+        : 'Use WHOOP recovery signals to guide training load',
+      insight: sleepLow
+        ? 'WHOOP data shows sleep is the limiter. Keep intensity controlled and recover first.'
+        : aerobicLow
+        ? 'WHOOP data shows good recovery with room to build aerobic base. Add short Zone 2 blocks.'
+        : rhrStrong
+        ? 'WHOOP data shows strong RHR and useful recovery. Strength training can continue.'
+        : 'WHOOP recovery signals are now merged into your dashboard.',
+    };
+  }, [data]);
+
   const recoveryData = useMemo(() => {
     const hasSleep = data.recovery?.[today]?.sleep;
-    const sleepScore = hasSleep ? hasSleep : 75;
+    const sleepScore = dashboardWhoopSignals.hasWhoop && dashboardWhoopSignals.recoveryScore !== null
+      ? dashboardWhoopSignals.recoveryScore
+      : hasSleep ? hasSleep : 75;
 
     const workoutLoad = workoutArr.reduce(
       (sum, w) => sum + (w.caloriesBurned || 0),
@@ -555,11 +624,15 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
 
     const hydrationSafeScore = hasWater ? hydrationScore : 60;
 
-    const rawScore =
-  sleepScore * 0.3 +
-  strainScore * 0.25 +
-  nutritionScore * 0.25 +
-  hydrationSafeScore * 0.2;
+    const baseReadinessScore =
+      sleepScore * 0.3 +
+      strainScore * 0.25 +
+      nutritionScore * 0.25 +
+      hydrationSafeScore * 0.2;
+
+    const rawScore = dashboardWhoopSignals.hasWhoop && dashboardWhoopSignals.recoveryScore !== null
+      ? baseReadinessScore * 0.55 + dashboardWhoopSignals.recoveryScore * 0.45
+      : baseReadinessScore;
 
 const score = Math.round(rawScore);
 
@@ -587,6 +660,7 @@ else if (score >= 55) status = 'Moderate';
     targets.calories,
     mealsArr.length,
     waterArr.length,
+    dashboardWhoopSignals,
   ]);
 
   const performanceScore = useMemo(() => {
@@ -623,15 +697,23 @@ else if (score >= 55) status = 'Moderate';
       };
     }
 
-    if (recovery > 80 && fatigueStatus === 'Normal Fatigue' && performanceScore > 60) {
+    if (
+      recovery > 80 &&
+      fatigueStatus === 'Normal Fatigue' &&
+      (performanceScore > 60 || dashboardWhoopSignals.hasWhoop)
+    ) {
       return {
         intensity: 'High',
-        workoutAction: 'Push progressive overload today',
-        calorieAction: 'Add performance fuel around training',
-        recoveryAction: 'Normal recovery protocol',
+        workoutAction: dashboardWhoopSignals.hasWhoop
+          ? 'WHOOP recovery supports strength work today'
+          : 'Push progressive overload today',
+        calorieAction: dashboardWhoopSignals.hasWhoop
+          ? 'Fuel training and recovery; keep protein high'
+          : 'Add performance fuel around training',
+        recoveryAction: dashboardWhoopSignals.action || 'Normal recovery protocol',
         buttonText: 'Start Performance Session',
         workoutType: 'Heavy Strength',
-        calorieAdjustment: 200,
+        calorieAdjustment: dashboardWhoopSignals.calorieAdjustment || 150,
       };
     }
 
@@ -644,7 +726,7 @@ else if (score >= 55) status = 'Moderate';
       workoutType: 'Controlled Hypertrophy',
       calorieAdjustment: 0,
     };
-  }, [recoveryData.score, fatigueStatus, performanceScore]);
+  }, [recoveryData.score, fatigueStatus, performanceScore, dashboardWhoopSignals]);
 
   // --- Metabolic Engine V2 ---
   // Single source of truth for Goal / Food / Exercise / AI adjustment / Remaining.
@@ -660,7 +742,7 @@ else if (score >= 55) status = 'Moderate';
     const remainingCalories = Math.round(dailyBudget - foodCalories);
     const overCalories = Math.max(0, Math.abs(Math.min(0, remainingCalories)));
 
-    const proteinTarget = Math.round(targets.protein);
+    const proteinTarget = Math.round(targets.protein + (dashboardWhoopSignals.proteinBoost || 0));
     const macroCaloriesAfterProtein = Math.max(0, dailyBudget - proteinTarget * 4);
     const carbsTarget = Math.round((macroCaloriesAfterProtein * 0.6) / 4);
     const fatsTarget = Math.round((macroCaloriesAfterProtein * 0.4) / 9);
@@ -668,6 +750,7 @@ else if (score >= 55) status = 'Moderate';
     const waterTarget = Number(
       (
         targets.water +
+        (dashboardWhoopSignals.hydrationBoost || 0) +
         (exerciseCalories / 500) * 0.5 +
         (aiControl.intensity === 'High' ? 0.5 : 0)
       ).toFixed(1)
@@ -701,7 +784,7 @@ else if (score >= 55) status = 'Moderate';
         water: waterTarget,
       },
     };
-  }, [targets, consumed.calories, burned, aiControl]);
+  }, [targets, consumed.calories, burned, aiControl, dashboardWhoopSignals]);
 
   const dynamicTargets = metabolicEngine.targets;
 
@@ -730,7 +813,10 @@ else if (score >= 55) status = 'Moderate';
         targets: dynamicTargets,
         workouts: workoutArr,
         waterTotal,
-        recovery: recoveryData,
+        recovery: {
+          ...recoveryData,
+          whoopSignals: dashboardWhoopSignals,
+        },
         fatigueStatus,
         performanceScore,
         performanceStatus,
