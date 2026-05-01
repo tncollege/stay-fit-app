@@ -95,6 +95,12 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     unit: 'portion',
     portion: '1 serving'
   });
+  const [showMealBuilder, setShowMealBuilder] = useState(false);
+  const [customMealName, setCustomMealName] = useState('');
+  const [aiMealPrompt, setAiMealPrompt] = useState('');
+  const [aiBuildingMeal, setAiBuildingMeal] = useState(false);
+  const [mealBuilderComponents, setMealBuilderComponents] = useState<any[]>([]);
+  const [manualIngredient, setManualIngredient] = useState({ name: '', qty: 1, unit: 'serving', calories: 0, protein: 0, carbs: 0, fats: 0 });
   const [weatherTemp, setWeatherTemp] = useState<number | null>(null);
   const [weatherAvailable, setWeatherAvailable] = useState(false);
 
@@ -103,6 +109,18 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   const waterTotalMl = waterArr.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const personalFoodList = data.personalFood || [];
   const combinedFoodList = [...FOOD_DATABASE, ...personalFoodList];
+
+  const mealBuilderTotals = useMemo(() => {
+    return mealBuilderComponents.reduce(
+      (acc, item) => ({
+        calories: acc.calories + Number(item.calories || 0),
+        protein: acc.protein + Number(item.protein || 0),
+        carbs: acc.carbs + Number(item.carbs || 0),
+        fats: acc.fats + Number(item.fats || 0),
+      }),
+      { calories: 0, protein: 0, carbs: 0, fats: 0 }
+    );
+  }, [mealBuilderComponents]);
 
   const EGG_DATA = {
     whole: { cal: 70, p: 6, c: 0.6, f: 5 },
@@ -435,6 +453,207 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     }
   };
 
+
+  const normalizeMealBuilderComponent = (item: any) => ({
+    id: item.id || crypto.randomUUID(),
+    name: item.name || 'Ingredient',
+    qty: Number(item.qty || 1),
+    unit: item.unit || item.portion || 'serving',
+    calories: Math.max(0, Math.round(Number(item.calories || 0))),
+    protein: Math.max(0, round(Number(item.protein || 0))),
+    carbs: Math.max(0, round(Number(item.carbs || 0))),
+    fats: Math.max(0, round(Number(item.fats ?? item.fat ?? 0))),
+  });
+
+  const addManualIngredientToMeal = () => {
+    if (!manualIngredient.name.trim()) return;
+    setMealBuilderComponents(prev => [...prev, normalizeMealBuilderComponent(manualIngredient)]);
+    setManualIngredient({ name: '', qty: 1, unit: 'serving', calories: 0, protein: 0, carbs: 0, fats: 0 });
+    showNutritionMessage('Ingredient added');
+  };
+
+  const updateMealBuilderComponent = (id: string, key: string, value: any) => {
+    setMealBuilderComponents(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const numericKeys = ['qty', 'calories', 'protein', 'carbs', 'fats'];
+      return { ...item, [key]: numericKeys.includes(key) ? Number(value) : value };
+    }));
+  };
+
+  const removeMealBuilderComponent = (id: string) => {
+    setMealBuilderComponents(prev => prev.filter(item => item.id !== id));
+  };
+
+  const estimateMealComponentsFromPrompt = async (prompt: string) => {
+    const text = prompt.toLowerCase();
+    const components: any[] = [];
+    const add = (item: any) => components.push(normalizeMealBuilderComponent(item));
+
+    const matchedFoods = combinedFoodList
+      .filter(food => {
+        const name = String(food.name || '').toLowerCase();
+        return name.length > 3 && text.includes(name);
+      })
+      .slice(0, 6);
+
+    matchedFoods.forEach(food => add({
+      name: food.name,
+      qty: 1,
+      unit: food.unit || food.portion || 'serving',
+      calories: food.calories,
+      protein: food.protein,
+      carbs: food.carbs,
+      fats: food.fats,
+    }));
+
+    const smartRules = [
+      { keys: ['chicken', 'shawarma'], item: { name: 'Chicken Shawarma', qty: 150, unit: 'g', calories: 310, protein: 36, carbs: 4, fats: 16 } },
+      { keys: ['chicken'], item: { name: 'Chicken Breast / Tikka', qty: 150, unit: 'g', calories: 248, protein: 46, carbs: 0, fats: 5 } },
+      { keys: ['paneer'], item: { name: 'Paneer', qty: 100, unit: 'g', calories: 265, protein: 18, carbs: 3, fats: 21 } },
+      { keys: ['dal'], item: { name: 'Dal', qty: 1, unit: 'bowl', calories: 180, protein: 10, carbs: 28, fats: 4 } },
+      { keys: ['rice'], item: { name: 'Rice', qty: 1, unit: 'bowl', calories: 205, protein: 4, carbs: 45, fats: 0 } },
+      { keys: ['roti'], item: { name: 'Roti', qty: 1, unit: 'piece', calories: 120, protein: 4, carbs: 22, fats: 3 } },
+      { keys: ['pita'], item: { name: 'Pita Bread', qty: 1, unit: 'piece', calories: 170, protein: 6, carbs: 34, fats: 2 } },
+      { keys: ['wrap'], item: { name: 'Wrap / Tortilla', qty: 1, unit: 'piece', calories: 180, protein: 5, carbs: 32, fats: 4 } },
+      { keys: ['pasta'], item: { name: 'Cooked Pasta', qty: 1, unit: 'bowl', calories: 300, protein: 10, carbs: 58, fats: 3 } },
+      { keys: ['egg'], item: { name: 'Eggs', qty: 2, unit: 'piece', calories: 140, protein: 12, carbs: 1, fats: 10 } },
+      { keys: ['whey'], item: { name: 'Whey Protein', qty: 1, unit: 'scoop', calories: 120, protein: 24, carbs: 3, fats: 2 } },
+      { keys: ['banana'], item: { name: 'Banana', qty: 1, unit: 'piece', calories: 105, protein: 1, carbs: 27, fats: 0 } },
+      { keys: ['curd'], item: { name: 'Curd / Yogurt', qty: 150, unit: 'g', calories: 90, protein: 6, carbs: 7, fats: 4 } },
+      { keys: ['yogurt'], item: { name: 'Yogurt / Dressing', qty: 100, unit: 'g', calories: 90, protein: 6, carbs: 7, fats: 4 } },
+      { keys: ['olive oil'], item: { name: 'Olive Oil', qty: 10, unit: 'ml', calories: 90, protein: 0, carbs: 0, fats: 10 } },
+      { keys: ['seeds'], item: { name: 'Mixed Seeds', qty: 15, unit: 'g', calories: 85, protein: 3, carbs: 3, fats: 7 } },
+      { keys: ['cheese'], item: { name: 'Cheese', qty: 30, unit: 'g', calories: 120, protein: 7, carbs: 1, fats: 10 } },
+      { keys: ['sauce'], item: { name: 'Sauce / Dressing', qty: 30, unit: 'g', calories: 80, protein: 1, carbs: 5, fats: 6 } },
+      { keys: ['garlic'], item: { name: 'Garlic Sauce', qty: 30, unit: 'g', calories: 120, protein: 1, carbs: 2, fats: 12 } },
+      { keys: ['salad'], item: { name: 'Mixed Salad Vegetables', qty: 100, unit: 'g', calories: 35, protein: 2, carbs: 7, fats: 0 } },
+      { keys: ['lettuce'], item: { name: 'Lettuce', qty: 50, unit: 'g', calories: 8, protein: 1, carbs: 2, fats: 0 } },
+      { keys: ['cucumber'], item: { name: 'Cucumber', qty: 100, unit: 'g', calories: 16, protein: 1, carbs: 4, fats: 0 } },
+      { keys: ['sushi'], item: { name: 'Sushi Rice + Fish Base', qty: 1, unit: 'bowl', calories: 420, protein: 28, carbs: 55, fats: 10 } },
+      { keys: ['smoothie'], item: { name: 'Smoothie Base', qty: 1, unit: 'glass', calories: 250, protein: 12, carbs: 38, fats: 6 } },
+    ];
+
+    smartRules.forEach(rule => {
+      if (rule.keys.every(key => text.includes(key)) && !components.some(c => c.name.toLowerCase() === rule.item.name.toLowerCase())) {
+        add(rule.item);
+      }
+    });
+
+    if (components.length === 0) {
+      const aiFood = await searchFoodNutrition(prompt);
+      if (aiFood) {
+        add({
+          name: aiFood.name || prompt,
+          qty: 1,
+          unit: aiFood.unit || aiFood.portion || 'meal',
+          calories: aiFood.calories,
+          protein: aiFood.protein,
+          carbs: aiFood.carbs,
+          fats: aiFood.fats,
+        });
+      }
+    }
+
+    return components.length ? components : [normalizeMealBuilderComponent({
+      name: prompt,
+      qty: 1,
+      unit: 'meal',
+      calories: 450,
+      protein: 25,
+      carbs: 45,
+      fats: 15,
+    })];
+  };
+
+  const handleBuildMealWithAI = async () => {
+    if (!aiMealPrompt.trim()) return;
+    setAiBuildingMeal(true);
+    try {
+      const components = await estimateMealComponentsFromPrompt(aiMealPrompt.trim());
+      setMealBuilderComponents(prev => [...prev, ...components]);
+      if (!customMealName.trim()) {
+        const cleaned = aiMealPrompt.trim();
+        setCustomMealName(cleaned.length > 42 ? cleaned.slice(0, 42) + '...' : cleaned);
+      }
+      showNutritionMessage('AI meal components added');
+    } catch (err) {
+      console.error('AI meal builder error ❌', err);
+      showNutritionMessage('Unable to build meal. Add ingredients manually.');
+    } finally {
+      setAiBuildingMeal(false);
+    }
+  };
+
+  const handleSaveBuiltMeal = async () => {
+    if (!customMealName.trim() || mealBuilderComponents.length === 0) return;
+
+    const newMeal: Meal = {
+      id: crypto.randomUUID(),
+      name: customMealName.trim(),
+      meal: selectedMeal,
+      calories: Math.round(mealBuilderTotals.calories),
+      protein: round(mealBuilderTotals.protein),
+      carbs: round(mealBuilderTotals.carbs),
+      fats: round(mealBuilderTotals.fats),
+      qty: 1,
+      unit: 'meal',
+      loggedAt: new Date().toISOString(),
+    };
+
+    const foodWithCategory = {
+      name: newMeal.name,
+      calories: newMeal.calories,
+      protein: newMeal.protein,
+      carbs: newMeal.carbs,
+      fats: newMeal.fats,
+      unit: 'meal',
+      portion: '1 meal',
+      main: 'User Food',
+      cuisine: 'Custom Meal',
+      components: mealBuilderComponents,
+    };
+
+    const isAlreadyInDb = combinedFoodList.some(
+      f => f.name.toLowerCase() === newMeal.name.toLowerCase()
+    );
+
+    try {
+      await saveMeal({
+        id: newMeal.id,
+        date: viewDate,
+        name: newMeal.name,
+        meal_type: selectedMeal,
+        calories: Number(newMeal.calories) || 0,
+        protein: Number(newMeal.protein) || 0,
+        carbs: Number(newMeal.carbs) || 0,
+        fats: Number(newMeal.fats) || 0,
+        quantity: 1,
+        unit: 'meal',
+        loggedAt: newMeal.loggedAt,
+      });
+
+      setData((prev: AppData) => ({
+        ...prev,
+        meals: {
+          ...prev.meals,
+          [viewDate]: [...(prev.meals[viewDate] || []), newMeal]
+        },
+        personalFood: isAlreadyInDb
+          ? (prev.personalFood || [])
+          : [...(prev.personalFood || []), foodWithCategory]
+      }));
+
+      setShowMealBuilder(false);
+      setCustomMealName('');
+      setAiMealPrompt('');
+      setMealBuilderComponents([]);
+      showNutritionMessage('Custom meal logged');
+    } catch (err) {
+      console.error('Built meal save error ❌', err);
+      showNutritionMessage('Unable to save meal. Please try again.');
+    }
+  };
+
   const handleAiSearch = async () => {
     if (!searchQuery) return;
     setAiSearching(true);
@@ -679,6 +898,12 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
               >
                 <PlusCircle size={10} /> Custom
               </button>
+              <button 
+                onClick={() => setShowMealBuilder(true)}
+                className="flex-none px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border border-dashed border-lime/40 text-lime hover:bg-lime/10 transition-all flex items-center gap-2"
+              >
+                <Sparkles size={10} /> Create Meal
+              </button>
             </div>
 
             {selectedMain && subs.length > 0 && (
@@ -773,7 +998,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
             <p className="mt-2 text-[11px] text-white/40 font-bold uppercase tracking-widest">
               {mealSuggestion}
             </p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button
                 onClick={() => {
                   setSelectedMeal(new Date().getHours() < 17 ? 'Lunch' : 'Dinner');
@@ -785,6 +1010,12 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                 className="rounded-xl bg-lime text-dark px-3 py-3 text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all"
               >
                 Find Protein Meal
+              </button>
+              <button
+                onClick={() => setShowMealBuilder(true)}
+                className="rounded-xl bg-pink/10 border border-pink/20 text-pink px-3 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-pink/20 active:scale-95 transition-all"
+              >
+                Create Meal
               </button>
               <button
                 onClick={() => addWater(500)}
@@ -948,6 +1179,165 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
 
         {showScanner && (
           <BarcodeScanner onResult={(res) => { console.log('Scanned:', res); setShowScanner(false); }} onClose={() => setShowScanner(false)} />
+        )}
+
+        {showMealBuilder && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowMealBuilder(false)} className="absolute inset-0 bg-black/90 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.92, opacity: 0, y: 16 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.92, opacity: 0, y: 16 }} className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto bg-panel border border-border p-5 md:p-8 rounded-[2rem] md:rounded-[3rem] shadow-2xl custom-scrollbar">
+              <button onClick={() => setShowMealBuilder(false)} className="absolute top-5 right-5 p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-all"><X size={18}/></button>
+
+              <div className="pr-12">
+                <div className="label-small text-lime mb-2">Universal Meal Builder</div>
+                <h3 className="text-3xl md:text-4xl font-black tracking-tight">Create Any Meal</h3>
+                <p className="mt-2 text-xs md:text-sm font-bold text-white/40 leading-relaxed">
+                  Build any homemade, restaurant, or custom meal from any cuisine. Use Gym-E AI to break it down, then edit every ingredient before logging.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] gap-5 mt-8">
+                <div className="space-y-5">
+                  <div className="rounded-3xl border border-lime/20 bg-lime/5 p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Sparkles size={16} className="text-lime" />
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime">Build with Gym-E AI</div>
+                    </div>
+                    <textarea
+                      value={aiMealPrompt}
+                      onChange={e => setAiMealPrompt(e.target.value)}
+                      placeholder="Describe any meal from any cuisine. Example: dal chawal with curd, paneer tikka wrap, chicken shawarma plate, sushi bowl, pasta with chicken, smoothie with banana and whey"
+                      className="w-full min-h-[105px] rounded-2xl bg-black/30 border border-white/10 px-4 py-4 text-sm font-bold outline-none resize-none focus:border-lime/50 transition-all placeholder:text-white/20"
+                    />
+                    <button
+                      onClick={handleBuildMealWithAI}
+                      disabled={aiBuildingMeal || !aiMealPrompt.trim()}
+                      className="mt-3 w-full rounded-2xl bg-lime py-4 text-[10px] font-black uppercase tracking-widest text-dark shadow-xl shadow-lime/20 disabled:opacity-30 active:scale-95 transition-all"
+                    >
+                      {aiBuildingMeal ? 'Breaking Down Meal...' : 'AI Break Down Meal'}
+                    </button>
+                  </div>
+
+                  <div className="rounded-3xl border border-pink/20 bg-pink/5 p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PlusCircle size={16} className="text-pink" />
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-pink">Manual Ingredient</div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+                      <input
+                        value={manualIngredient.name}
+                        onChange={e => setManualIngredient({ ...manualIngredient, name: e.target.value })}
+                        placeholder="Ingredient"
+                        className="sm:col-span-2 rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-bold outline-none focus:border-pink/50"
+                      />
+                      <input
+                        type="number"
+                        value={manualIngredient.qty}
+                        onChange={e => setManualIngredient({ ...manualIngredient, qty: Number(e.target.value) })}
+                        placeholder="Qty"
+                        className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-black outline-none focus:border-pink/50"
+                      />
+                      <input
+                        value={manualIngredient.unit}
+                        onChange={e => setManualIngredient({ ...manualIngredient, unit: e.target.value })}
+                        placeholder="Unit"
+                        className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-bold outline-none focus:border-pink/50"
+                      />
+                      <input
+                        type="number"
+                        value={manualIngredient.calories}
+                        onChange={e => setManualIngredient({ ...manualIngredient, calories: Number(e.target.value) })}
+                        placeholder="Kcal"
+                        className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-black text-pink outline-none focus:border-pink/50"
+                      />
+                      <button onClick={addManualIngredientToMeal} className="rounded-2xl bg-pink text-dark px-4 py-3 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">
+                        Add
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mt-3">
+                      <input type="number" value={manualIngredient.protein} onChange={e => setManualIngredient({ ...manualIngredient, protein: Number(e.target.value) })} placeholder="Protein g" className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-xs font-black text-lime outline-none" />
+                      <input type="number" value={manualIngredient.carbs} onChange={e => setManualIngredient({ ...manualIngredient, carbs: Number(e.target.value) })} placeholder="Carbs g" className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-xs font-black text-sky outline-none" />
+                      <input type="number" value={manualIngredient.fats} onChange={e => setManualIngredient({ ...manualIngredient, fats: Number(e.target.value) })} placeholder="Fats g" className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-xs font-black outline-none" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <input
+                    value={customMealName}
+                    onChange={e => setCustomMealName(e.target.value)}
+                    placeholder="Meal name e.g. Chicken Shawarma Plate"
+                    className="w-full rounded-2xl bg-white/[0.03] border border-border px-5 py-4 text-lg font-black outline-none focus:border-lime transition-all"
+                  />
+
+                  <div className="grid grid-cols-4 gap-2">
+                    <NutriSmall label="Kcal" val={Math.round(mealBuilderTotals.calories)} color="text-pink" />
+                    <NutriSmall label="Prot" val={round(mealBuilderTotals.protein) + 'g'} color="text-lime" />
+                    <NutriSmall label="Carb" val={round(mealBuilderTotals.carbs) + 'g'} color="text-sky" />
+                    <NutriSmall label="Fat" val={round(mealBuilderTotals.fats) + 'g'} />
+                  </div>
+
+                  <div className="rounded-3xl border border-border bg-black/20 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="label-small text-white/40">Editable Components</div>
+                      <div className="text-[10px] font-black text-white/30 uppercase tracking-widest">{mealBuilderComponents.length} items</div>
+                    </div>
+
+                    {mealBuilderComponents.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs font-bold text-white/30">
+                        Use AI breakdown or add ingredients manually.
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
+                        {mealBuilderComponents.map(item => (
+                          <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <input
+                                value={item.name}
+                                onChange={e => updateMealBuilderComponent(item.id, 'name', e.target.value)}
+                                className="flex-1 bg-transparent text-sm font-black outline-none"
+                              />
+                              <button onClick={() => removeMealBuilderComponent(item.id)} className="p-2 rounded-xl bg-red-500/10 text-red-300 hover:bg-red-500/20 transition-all"><Trash2 size={14}/></button>
+                            </div>
+                            <div className="grid grid-cols-6 gap-2 mt-3">
+                              <input type="number" value={item.qty} onChange={e => updateMealBuilderComponent(item.id, 'qty', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black outline-none" />
+                              <input value={item.unit} onChange={e => updateMealBuilderComponent(item.id, 'unit', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-bold outline-none" />
+                              <input type="number" value={item.calories} onChange={e => updateMealBuilderComponent(item.id, 'calories', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black text-pink outline-none" />
+                              <input type="number" value={item.protein} onChange={e => updateMealBuilderComponent(item.id, 'protein', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black text-lime outline-none" />
+                              <input type="number" value={item.carbs} onChange={e => updateMealBuilderComponent(item.id, 'carbs', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black text-sky outline-none" />
+                              <input type="number" value={item.fats} onChange={e => updateMealBuilderComponent(item.id, 'fats', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black outline-none" />
+                            </div>
+                            <div className="grid grid-cols-6 gap-2 mt-1 text-[8px] font-black uppercase tracking-widest text-white/25 px-2">
+                              <span>Qty</span><span>Unit</span><span>Kcal</span><span>P</span><span>C</span><span>F</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        setCustomMealName('');
+                        setAiMealPrompt('');
+                        setMealBuilderComponents([]);
+                      }}
+                      className="rounded-2xl bg-white/5 border border-white/10 py-4 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={handleSaveBuiltMeal}
+                      disabled={!customMealName.trim() || mealBuilderComponents.length === 0}
+                      className="rounded-2xl bg-lime text-dark py-4 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-lime/20 disabled:opacity-30 active:scale-95 transition-all"
+                    >
+                      Save & Log Meal
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
 
         {showCustomForm && (
