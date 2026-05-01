@@ -1874,6 +1874,65 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
     return { start, current, target, diff, toGoal, progress };
   }, [data.profile, data.weights]);
 
+  const recoverySignals = useMemo(() => {
+    const current = data as any;
+    const whoop = current.integrations?.whoop || {};
+    const metrics = whoop.metrics || current.recovery?.whoopMetrics || null;
+
+    if (!metrics) {
+      return {
+        hasWhoop: false,
+        source: null,
+        rhrAvg: null,
+        sleepAvg: null,
+        respiratoryRate: null,
+        aerobicAvg: null,
+        recoveryScore: null,
+        insight: null,
+        action: null,
+      };
+    }
+
+    const rhrAvg = Number(metrics.restingHeartRateAvg30 || 0) || null;
+    const sleepAvg = Number(metrics.sleepAvg30Hours || 0) || null;
+    const respiratoryRate = Number(metrics.respiratoryRateAvg30 || 0) || null;
+    const aerobicAvg = Number(metrics.aerobicActivityAvg30Min || 0) || null;
+    const marchRhr = Number(metrics.restingHeartRateMarchAvg || 0) || null;
+    const aprilRhr = Number(metrics.restingHeartRateAprilAvg || 0) || null;
+
+    const sleepScore = sleepAvg ? Math.min(100, Math.round((sleepAvg / 7) * 100)) : 60;
+    const rhrScore = rhrAvg ? Math.max(40, Math.min(100, Math.round(100 - Math.max(0, rhrAvg - 60) * 3))) : 60;
+    const cardioScore = aerobicAvg ? Math.min(100, Math.round((aerobicAvg / 22) * 100)) : 50;
+    const trendBonus = marchRhr && aprilRhr && aprilRhr < marchRhr ? 8 : 0;
+    const recoveryScore = Math.min(100, Math.round((sleepScore * 0.4) + (rhrScore * 0.35) + (cardioScore * 0.25) + trendBonus));
+
+    const insight = (() => {
+      if (sleepAvg && sleepAvg < 6.5) return 'WHOOP recovery signal: sleep is the limiter. Keep training controlled and protect sleep first.';
+      if (rhrAvg && rhrAvg <= 65 && sleepAvg && sleepAvg >= 7) return 'WHOOP recovery signal: sleep and RHR are supportive. Strength training can continue with controlled Zone 2.';
+      if (aerobicAvg && aerobicAvg < 22) return 'WHOOP recovery signal: recovery is usable, but aerobic base needs small Zone 2 additions.';
+      return 'WHOOP recovery signal integrated. Use recovery, sleep and RHR trends to guide training load.';
+    })();
+
+    const action = (() => {
+      if (sleepAvg && sleepAvg < 6.5) return 'Sleep 30–45 minutes earlier before adding extra workout intensity.';
+      if (aerobicAvg && aerobicAvg < 22) return 'Add 10–15 minutes Zone 2 after 3 strength workouts this week.';
+      if (rhrAvg && rhrAvg <= 65) return 'Keep strength training consistent and use walks for extra fat-loss support.';
+      return 'Keep logging meals, workouts, sleep and steps for sharper Gym-E recommendations.';
+    })();
+
+    return {
+      hasWhoop: true,
+      source: 'whoop_pdf',
+      rhrAvg,
+      sleepAvg,
+      respiratoryRate,
+      aerobicAvg,
+      recoveryScore,
+      insight,
+      action,
+    };
+  }, [data]);
+
   const weeklySummary = useMemo(() => {
     const baseDate = new Date(viewDate || getTodayKey());
     const keys = Array.from({ length: 7 }, (_, index) => {
@@ -1921,7 +1980,15 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
     const workoutScore = Math.min(100, (weeklyWorkouts / 5) * 100);
     const proteinScore = targetProtein ? Math.min(100, (avgProtein / targetProtein) * 100) : 0;
     const stepsScore = stepGoal ? Math.min(100, (avgSteps / stepGoal) * 100) : 0;
-    const consistencyScore = Math.round(workoutScore * 0.4 + proteinScore * 0.35 + stepsScore * 0.25);
+    const recoveryScore = recoverySignals.hasWhoop && recoverySignals.recoveryScore !== null
+      ? Number(recoverySignals.recoveryScore)
+      : null;
+
+    const consistencyScore = Math.round(
+      recoveryScore !== null
+        ? workoutScore * 0.35 + proteinScore * 0.30 + stepsScore * 0.20 + recoveryScore * 0.15
+        : workoutScore * 0.40 + proteinScore * 0.35 + stepsScore * 0.25
+    );
 
     const workoutScoreRounded = Math.round(workoutScore);
     const proteinScoreRounded = Math.round(proteinScore);
@@ -1933,7 +2000,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       return 'Trend: Stable';
     })();
 
-    const trendInsight = (() => {
+    const baseTrendInsight = (() => {
       if (data.profile.goal === 'Muscle Gain') {
         if (weightDelta > 0) return 'Lean gain trend is moving upward. Keep protein high and monitor waist/strength.';
         return 'Weight is not moving up yet. Add 200–300 kcal or improve training consistency.';
@@ -1943,10 +2010,18 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       return 'Weight is stable. Increase daily steps or reduce 200–300 kcal if progress stalls.';
     })();
 
+    const trendInsight = recoverySignals.hasWhoop && recoverySignals.insight
+      ? `${baseTrendInsight} ${recoverySignals.insight}`
+      : baseTrendInsight;
+
     const nextAction = (() => {
+      if (recoverySignals.hasWhoop && recoverySignals.sleepAvg && recoverySignals.sleepAvg < 6.5) {
+        return recoverySignals.action || 'Prioritize sleep recovery today.';
+      }
       if (stepsScore < 50) return `Walk ${Math.max(1500, stepGoal - avgSteps).toLocaleString()} more steps today.`;
       if (proteinScore < 75) return `Add ${Math.max(20, targetProtein - avgProtein)}g protein today.`;
       if (workoutScore < 60) return 'Complete one more training session this week.';
+      if (recoverySignals.hasWhoop && recoverySignals.action) return recoverySignals.action;
       return 'Maintain the current routine and keep logging daily.';
     })();
 
@@ -1960,11 +2035,13 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       workoutScore: workoutScoreRounded,
       proteinScore: proteinScoreRounded,
       stepsScore: stepsScoreRounded,
+      recoveryScore: recoveryScore !== null ? Math.round(recoveryScore) : null,
+      recoverySignals,
       trendLabel,
       trendInsight,
       nextAction,
     };
-  }, [data.workouts, data.steps, data.meals, data.weights, data.profile, viewDate]);
+  }, [data.workouts, data.steps, data.meals, data.weights, data.profile, viewDate, recoverySignals]);
 
   const handleLogWeight = async () => {
     const weight = Number(logWeight);
@@ -2227,7 +2304,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       } as AppData;
     });
 
-    showAppMessage('WHOOP PDF uploaded. Gym-E is analyzing it.');
+    showAppMessage('WHOOP PDF uploaded. Gym-E is analyzing it and merging recovery signals into Progress Intelligence.');
 
     window.setTimeout(() => {
       const analysis = analyzeWhoopPdfLocally(file);
@@ -2263,7 +2340,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
         } as AppData;
       });
 
-      showAppMessage('WHOOP analysis complete. Gym-E actions updated.');
+      showAppMessage('WHOOP analysis complete. Recovery signals merged into your progress data.');
     }, 700);
 
     e.target.value = '';
@@ -2341,6 +2418,9 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
     { label: 'Workout', value: weeklySummary.workoutScore, suffix: '%', accent: 'bg-sky', text: 'text-sky' },
     { label: 'Protein', value: weeklySummary.proteinScore, suffix: '%', accent: 'bg-pink', text: 'text-pink' },
     { label: 'Steps', value: weeklySummary.stepsScore, suffix: '%', accent: 'bg-sky', text: 'text-sky' },
+    ...(weeklySummary.recoveryScore !== null
+      ? [{ label: 'Recovery', value: weeklySummary.recoveryScore, suffix: '%', accent: 'bg-lime', text: 'text-lime' }]
+      : []),
   ];
 
   const progressGlow = Math.max(4, Math.min(100, stats.progress || 0));
@@ -2503,7 +2583,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
               className="h-full bg-lime shadow-[0_0_10px_rgba(215,255,0,0.5)]"
             />
           </div>
-          <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+          <div className={`grid ${weeklySummary.recoveryScore !== null ? 'grid-cols-4' : 'grid-cols-3'} gap-2 mt-4 text-center`}>
             <div className="rounded-xl bg-black/30 border border-white/5 p-2">
               <div className="text-[9px] text-white/35 font-black uppercase tracking-widest">Workout</div>
               <div className="text-xs font-black text-lime mt-1">{weeklySummary.workoutScore}%</div>
@@ -2516,6 +2596,12 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
               <div className="text-[9px] text-white/35 font-black uppercase tracking-widest">Steps</div>
               <div className="text-xs font-black text-sky mt-1">{weeklySummary.stepsScore}%</div>
             </div>
+            {weeklySummary.recoveryScore !== null && (
+              <div className="rounded-xl bg-black/30 border border-white/5 p-2">
+                <div className="text-[9px] text-white/35 font-black uppercase tracking-widest">Recovery</div>
+                <div className="text-xs font-black text-lime mt-1">{weeklySummary.recoveryScore}%</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2839,7 +2925,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                             <div className="p-4 rounded-xl bg-white/[0.02] border border-border">
                 <div className="text-[10px] font-black uppercase tracking-widest text-lime mb-2">Manual Import</div>
                 <p className="text-[10px] opacity-50 leading-relaxed mb-4">
-                  Import Apple Health / Health Connect CSV, or upload a WHOOP PDF report for Gym-E recovery analysis.
+                  Import Apple Health / Health Connect CSV, or upload a WHOOP PDF as a recovery data source.
                 </p>
 
                 <div className="space-y-3">
@@ -2879,7 +2965,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                           Upload WHOOP PDF
                         </div>
                         <div className="text-[10px] opacity-50 leading-relaxed mt-1 normal-case tracking-normal font-normal">
-                          Upload your WHOOP weekly/monthly report. Gym-E will prepare recovery, strain, sleep, HRV and RHR insights.
+                          Upload your WHOOP weekly/monthly report. Gym-E will merge recovery, sleep, RHR and cardio signals into Progress Intelligence.
                         </div>
                         {(data as any).integrations?.whoop?.latestPdf && (
                           <div className="mt-3 rounded-lg bg-black/20 border border-white/10 px-3 py-2 space-y-2">
@@ -2892,52 +2978,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                               </div>
                             </div>
 
-                            {(data as any).integrations?.whoop?.latestAnalysis && (
-                              <div className="rounded-lg border border-lime/20 bg-lime/5 p-3">
-                                <div className="text-[9px] font-black uppercase tracking-widest text-lime">
-                                  Gym-E WHOOP Analysis Complete
-                                </div>
-                                <p className="mt-1 text-[10px] opacity-70 leading-relaxed">
-                                  {(data as any).integrations.whoop.latestAnalysis.gymEInsight}
-                                </p>
 
-                                <div className="grid grid-cols-2 gap-2 mt-3">
-                                  <div className="rounded-lg bg-white/5 p-2 text-center">
-                                    <div className="text-sm font-black">
-                                      {(data as any).integrations.whoop.metrics?.restingHeartRateAvg30 || '--'}
-                                    </div>
-                                    <div className="text-[8px] opacity-40 uppercase">RHR Avg</div>
-                                  </div>
-                                  <div className="rounded-lg bg-white/5 p-2 text-center">
-                                    <div className="text-sm font-black">
-                                      {(data as any).integrations.whoop.metrics?.sleepAvg30Hours || '--'}h
-                                    </div>
-                                    <div className="text-[8px] opacity-40 uppercase">Sleep Avg</div>
-                                  </div>
-                                  <div className="rounded-lg bg-white/5 p-2 text-center">
-                                    <div className="text-sm font-black">
-                                      {(data as any).integrations.whoop.metrics?.respiratoryRateAvg30 || '--'}
-                                    </div>
-                                    <div className="text-[8px] opacity-40 uppercase">Resp Rate</div>
-                                  </div>
-                                  <div className="rounded-lg bg-white/5 p-2 text-center">
-                                    <div className="text-sm font-black">
-                                      {(data as any).integrations.whoop.metrics?.aerobicActivityAvg30Min || '--'}m
-                                    </div>
-                                    <div className="text-[8px] opacity-40 uppercase">Aerobic Avg</div>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-2 mt-3">
-                                  {((data as any).integrations.whoop.actions || []).slice(0, 3).map((action: any, idx: number) => (
-                                    <div key={idx} className="rounded-lg bg-black/20 border border-white/10 p-2">
-                                      <div className="text-[9px] font-black uppercase tracking-wider">{action.title}</div>
-                                      <div className="text-[9px] opacity-55 mt-0.5 leading-relaxed">{action.message}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
