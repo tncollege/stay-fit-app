@@ -371,6 +371,56 @@ function normalizeForMatch(value: string) {
   return normalizeExerciseName(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function buildPostWorkoutNutritionContext(workout: any, viewDate: string) {
+  const caloriesBurned = Number(workout?.caloriesBurned || 0);
+  const duration = Number(workout?.duration || 0);
+  const category = workout?.category || 'Strength';
+  const muscles = workout?.muscles || [];
+  const intensity = caloriesBurned >= 500 || duration >= 60 ? 'high' : caloriesBurned >= 250 || duration >= 35 ? 'moderate' : 'light';
+
+  return {
+    id: `post-workout-${workout?.id || Date.now()}`,
+    date: viewDate,
+    workoutId: workout?.id,
+    workoutName: workout?.name || 'Workout',
+    category,
+    muscles,
+    caloriesBurned,
+    duration,
+    intensity,
+    createdAt: new Date().toISOString(),
+    recommendation: {
+      title: 'Post-workout meal suggested',
+      timing: 'Eat within 60–120 minutes after training.',
+      protein: intensity === 'high' ? '35–45g protein' : intensity === 'moderate' ? '25–35g protein' : '20–30g protein',
+      carbs: category === 'Strength' ? '40–70g carbs' : intensity === 'high' ? '60–90g carbs' : '25–50g carbs',
+      fats: 'Keep fats moderate so digestion stays light.',
+      hydration: caloriesBurned >= 450 ? 'Add water + electrolytes.' : 'Hydrate steadily with water.',
+      examples: category === 'Strength'
+        ? ['Chicken rice bowl', 'Paneer roti bowl', 'Whey + banana + curd', 'Eggs + toast + fruit']
+        : ['Banana smoothie with whey', 'Curd rice + lean protein', 'Sandwich + fruit', 'Rice bowl with protein'],
+    },
+  };
+}
+
+function publishPostWorkoutNutritionContext(workout: any, viewDate: string) {
+  if (typeof window === 'undefined') return;
+
+  const context = buildPostWorkoutNutritionContext(workout, viewDate);
+  window.localStorage.setItem('stayfit_post_workout_nutrition_context', JSON.stringify(context));
+  window.dispatchEvent(new CustomEvent('stayfit:post-workout-nutrition', { detail: context }));
+}
+
+function getWorkoutSummary(workouts: any[]) {
+  const totalSets = workouts.reduce((sum, w) => sum + (w.sets?.length || 0), 0);
+  const totalVolume = workouts.reduce((sum, w) => sum + getWorkoutTotalVolume(w.sets || []), 0);
+  const caloriesBurned = workouts.reduce((sum, w) => sum + Number(w.caloriesBurned || 0), 0);
+  const duration = workouts.reduce((sum, w) => sum + Number(w.duration || 0), 0);
+  const muscles = Array.from(new Set(workouts.flatMap((w) => w.muscles || []).filter(Boolean)));
+
+  return { totalSets, totalVolume, caloriesBurned, duration, muscles };
+}
+
 export default function WorkoutView({
   data,
   setData,
@@ -921,7 +971,9 @@ const allWorkouts = useMemo<Workout[]>(() => {
         },
       }));
 
-      showWorkoutMessage('Workout saved successfully');
+      publishPostWorkoutNutritionContext(newWorkout, viewDate);
+
+      showWorkoutMessage('Workout saved. Post-workout nutrition suggestions are ready.');
       window.setTimeout(() => {
         document.getElementById('workout-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 200);
@@ -1082,6 +1134,13 @@ const allWorkouts = useMemo<Workout[]>(() => {
     }));
   };
 
+  const hasLoggedTodayWorkout = workoutsArr.length > 0;
+  const todayWorkoutSummary = getWorkoutSummary(workoutsArr);
+  const latestWorkout = workoutsArr[workoutsArr.length - 1];
+  const postWorkoutNutritionContext = latestWorkout
+    ? buildPostWorkoutNutritionContext(latestWorkout, viewDate)
+    : null;
+
   return (
     <>
       {timerActive && (
@@ -1184,6 +1243,11 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 togglePlanExerciseComplete={togglePlanExerciseComplete}
                 currentSets={currentSets}
                 setShowTipsFor={setShowTipsFor}
+                hasLoggedTodayWorkout={hasLoggedTodayWorkout}
+                todayWorkoutSummary={todayWorkoutSummary}
+                latestWorkout={latestWorkout}
+                postWorkoutNutritionContext={postWorkoutNutritionContext}
+                startAdditionalSession={startTodayPlan}
               />
 
               <AISearchBar
@@ -1592,6 +1656,11 @@ function WeeklyPlanSection(props: any) {
     completedPlanExercises,
     togglePlanExerciseComplete,
     currentSets = [],
+    hasLoggedTodayWorkout = false,
+    todayWorkoutSummary = null,
+    latestWorkout = null,
+    postWorkoutNutritionContext = null,
+    startAdditionalSession,
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
@@ -1604,6 +1673,81 @@ const { setShowTipsFor } = props;
     yesterdaySummary && todayPlan?.planName
       ? `Yesterday you logged ${yesterdaySummary}. Today is planned as ${todayPlan.planName}. Update the weekly plan if your split changed.`
       : '';
+
+  if (hasLoggedTodayWorkout) {
+    const summary = todayWorkoutSummary || getWorkoutSummary([]);
+    const nutrition = postWorkoutNutritionContext?.recommendation;
+
+    return (
+      <div data-workout-summary-section className="rounded-[2rem] border border-lime/25 bg-lime/[0.04] p-5 space-y-5">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div>
+            <div className="label-small text-lime mb-2">Today’s Workout Summary • {todayName}</div>
+            <h3 className="text-2xl font-black tracking-tight">{latestWorkout?.name || 'Workout Logged'}</h3>
+            <p className="text-[11px] text-white/45 mt-1">
+              Workout is already logged for today. The plan is hidden now; focus on recovery, hydration and post-workout nutrition.
+            </p>
+          </div>
+
+          <button
+            onClick={startAdditionalSession}
+            className="px-5 py-3 rounded-xl bg-white/[0.04] border border-border text-white/60 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
+          >
+            Start Extra Session
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-border bg-white/[0.03] p-4 text-center">
+            <div className="text-xl font-black">{summary.totalSets}</div>
+            <div className="label-small text-white/35 mt-1">Sets</div>
+          </div>
+          <div className="rounded-2xl border border-border bg-white/[0.03] p-4 text-center">
+            <div className="text-xl font-black">{summary.totalVolume} kg</div>
+            <div className="label-small text-white/35 mt-1">Volume</div>
+          </div>
+          <div className="rounded-2xl border border-border bg-white/[0.03] p-4 text-center">
+            <div className="text-xl font-black">{summary.caloriesBurned}</div>
+            <div className="label-small text-white/35 mt-1">Kcal Burned</div>
+          </div>
+          <div className="rounded-2xl border border-border bg-white/[0.03] p-4 text-center">
+            <div className="text-xl font-black">{summary.duration || '—'}</div>
+            <div className="label-small text-white/35 mt-1">Minutes</div>
+          </div>
+        </div>
+
+        {summary.muscles?.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {summary.muscles.map((m: string) => (
+              <span key={m} className="rounded-full border border-lime/20 bg-lime/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-lime">
+                {m}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {nutrition && (
+          <div className="rounded-[1.5rem] border border-sky/20 bg-sky/[0.04] p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sky">
+              <Sparkles size={16} />
+              <div className="text-[10px] font-black uppercase tracking-widest">Nutrition Engine Connected</div>
+            </div>
+            <div className="text-sm font-black">{nutrition.title}</div>
+            <div className="text-[11px] text-white/50 leading-relaxed">
+              {nutrition.timing} Target {nutrition.protein}, {nutrition.carbs}. {nutrition.fats} {nutrition.hydration}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {nutrition.examples.map((item: string) => (
+                <span key={item} className="rounded-full border border-sky/20 bg-sky/10 px-3 py-1 text-[10px] font-bold text-sky">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div data-weekly-plan-section className="rounded-[2rem] border border-lime/20 bg-lime/[0.03] p-5 space-y-5">
