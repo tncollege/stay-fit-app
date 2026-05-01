@@ -1881,21 +1881,37 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       ?? currentWeight;
     const weightDelta = round(currentWeight - previousWeight);
 
+    const stepGoal = data.profile.stepGoal || 10000;
     const workoutScore = Math.min(100, (weeklyWorkouts / 5) * 100);
     const proteinScore = targetProtein ? Math.min(100, (avgProtein / targetProtein) * 100) : 0;
-    const stepsScore = (data.profile.stepGoal || 10000)
-      ? Math.min(100, (avgSteps / (data.profile.stepGoal || 10000)) * 100)
-      : 0;
+    const stepsScore = stepGoal ? Math.min(100, (avgSteps / stepGoal) * 100) : 0;
     const consistencyScore = Math.round(workoutScore * 0.4 + proteinScore * 0.35 + stepsScore * 0.25);
+
+    const workoutScoreRounded = Math.round(workoutScore);
+    const proteinScoreRounded = Math.round(proteinScore);
+    const stepsScoreRounded = Math.round(stepsScore);
+
+    const trendLabel = (() => {
+      if (weightDelta < 0) return 'Trend: Moving Down';
+      if (weightDelta > 0) return 'Trend: Moving Up';
+      return 'Trend: Stable';
+    })();
 
     const trendInsight = (() => {
       if (data.profile.goal === 'Muscle Gain') {
         if (weightDelta > 0) return 'Lean gain trend is moving upward. Keep protein high and monitor waist/strength.';
-        return 'Weight is not moving up yet. Add calories or improve training consistency.';
+        return 'Weight is not moving up yet. Add 200–300 kcal or improve training consistency.';
       }
       if (weightDelta < 0) return 'Fat-loss trend is moving in the right direction. Stay consistent this week.';
       if (weightDelta > 0) return 'Weight is trending up. Review calories, steps, and weekend intake.';
-      return 'Weight is stable. Improve consistency or adjust calories if progress stalls.';
+      return 'Weight is stable. Increase daily steps or reduce 200–300 kcal if progress stalls.';
+    })();
+
+    const nextAction = (() => {
+      if (stepsScore < 50) return `Walk ${Math.max(1500, stepGoal - avgSteps).toLocaleString()} more steps today.`;
+      if (proteinScore < 75) return `Add ${Math.max(20, targetProtein - avgProtein)}g protein today.`;
+      if (workoutScore < 60) return 'Complete one more training session this week.';
+      return 'Maintain the current routine and keep logging daily.';
     })();
 
     return {
@@ -1905,7 +1921,12 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       avgSteps,
       weightDelta,
       consistencyScore,
+      workoutScore: workoutScoreRounded,
+      proteinScore: proteinScoreRounded,
+      stepsScore: stepsScoreRounded,
+      trendLabel,
       trendInsight,
+      nextAction,
     };
   }, [data.workouts, data.steps, data.meals, data.weights, data.profile, viewDate]);
 
@@ -2047,6 +2068,20 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
               className="h-full bg-lime shadow-[0_0_10px_rgba(215,255,0,0.5)]"
             />
           </div>
+          <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+            <div className="rounded-xl bg-black/30 border border-white/5 p-2">
+              <div className="text-[9px] text-white/35 font-black uppercase tracking-widest">Workout</div>
+              <div className="text-xs font-black text-lime mt-1">{weeklySummary.workoutScore}%</div>
+            </div>
+            <div className="rounded-xl bg-black/30 border border-white/5 p-2">
+              <div className="text-[9px] text-white/35 font-black uppercase tracking-widest">Protein</div>
+              <div className="text-xs font-black text-lime mt-1">{weeklySummary.proteinScore}%</div>
+            </div>
+            <div className="rounded-xl bg-black/30 border border-white/5 p-2">
+              <div className="text-[9px] text-white/35 font-black uppercase tracking-widest">Steps</div>
+              <div className="text-xs font-black text-sky mt-1">{weeklySummary.stepsScore}%</div>
+            </div>
+          </div>
         </div>
 
         <div className="stat-card p-5">
@@ -2078,8 +2113,12 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
             <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime mb-2">Progress Intelligence</div>
             <h3 className="text-xl font-black uppercase tracking-tight">{weeklySummary.trendInsight}</h3>
             <p className="text-xs text-white/40 mt-2 font-bold uppercase tracking-widest">
-              Weight change this cycle: {weeklySummary.weightDelta > 0 ? '+' : ''}{weeklySummary.weightDelta} {weightUnit}
+              This week: {weeklySummary.weightDelta > 0 ? '+' : ''}{weeklySummary.weightDelta} {weightUnit} · Total Progress: {stats.progress}%
             </p>
+            <div className="mt-4 rounded-2xl bg-black/30 border border-white/10 p-4">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-sky mb-1">Next Action</div>
+              <p className="text-sm font-bold text-white">{weeklySummary.nextAction}</p>
+            </div>
           </div>
           <div className="min-w-[220px]">
             <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest mb-2">
@@ -2102,7 +2141,10 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
           {/* Main Chart */}
           <div className="stat-card p-6 h-[400px]">
             <div className="flex justify-between items-center mb-6">
-              <div className="label-small">{activeView === 'weight' ? 'Weight Trend' : 'Activity Trend'}</div>
+              <div>
+                <div className="label-small">{activeView === 'weight' ? 'Weight Trend' : 'Activity Trend'}</div>
+                <div className="text-[10px] text-lime/70 font-black uppercase tracking-widest mt-1">{weeklySummary.trendLabel}</div>
+              </div>
               <div className="text-[10px] opacity-40 font-mono">Trend Visualization</div>
             </div>
             
