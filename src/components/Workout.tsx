@@ -193,8 +193,39 @@ function getWorkoutTotalVolume(sets: WorkoutSet[] = []) {
   return sets.reduce((total, set) => total + getSetVolume(set), 0);
 }
 
-function getRecommendedTrainingMode(score: number, fatigueStatus: string, dayName: string): TrainingMode {
+function getPlanTrainingMode(plan: any): TrainingMode | null {
+  if (!plan) return null;
+
+  const planText = [
+    plan.planName,
+    ...(plan.exercises || []).flatMap((exercise: any) => [exercise?.name, exercise?.bodyPart]),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (!planText.trim()) return null;
+
+  if (/recovery|mobility|stretch|yoga|walk/.test(planText)) return 'Recovery';
+  if (/pull|back|bicep|row|pulldown|pullup|chinup|deadlift|curl/.test(planText)) return 'Pull';
+  if (/push|chest|tricep|shoulder|bench|press|dip|fly|raise/.test(planText)) return 'Push';
+  if (/leg|lower|quad|hamstring|glute|calf|squat|lunge|leg press/.test(planText)) return 'Legs';
+  if (/upper/.test(planText)) return 'Upper';
+  if (/lower/.test(planText)) return 'Lower';
+
+  return null;
+}
+
+function getRecommendedTrainingMode(
+  score: number,
+  fatigueStatus: string,
+  dayName: string,
+  todayPlan?: any
+): TrainingMode {
   if (score < 50 || fatigueStatus === 'High Fatigue') return 'Recovery';
+
+  const plannedMode = getPlanTrainingMode(todayPlan);
+  if (plannedMode) return plannedMode;
 
   const day = dayName.toLowerCase();
   if (day.includes('monday')) return 'Push';
@@ -467,8 +498,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
   ]);
 
   const recommendedMode = useMemo(
-    () => getRecommendedTrainingMode(workoutReadiness, fatigueStatus, todayName),
-    [workoutReadiness, fatigueStatus, todayName]
+    () => getRecommendedTrainingMode(workoutReadiness, fatigueStatus, todayName, todayPlan),
+    [workoutReadiness, fatigueStatus, todayName, todayPlan]
   );
 
   const activeTrainingMode = trainingMode === 'Auto' ? recommendedMode : trainingMode;
@@ -1332,6 +1363,9 @@ function WorkoutEnginePanel({
           </h3>
           <p className="text-xs text-white/50 font-bold mt-2 max-w-2xl">
             {prescription.instruction}
+          </p>
+          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-sky">
+            Weekly plan synced · Intensity adjusted by readiness
           </p>
         </div>
 
