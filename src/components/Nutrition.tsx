@@ -75,6 +75,160 @@ function scaleMicronutrients(micros: Record<string, number>, qty: number) {
 
 const MEAL_UNIT_OPTIONS = ['g', 'ml', 'kg', 'L', 'piece', 'bowl', 'cup', 'scoop', 'tbsp', 'tsp', 'slice', 'glass', 'serving', 'meal'];
 
+
+// SaaS-grade Nutrition Engine V1
+// This layer keeps nutrition intelligence API/database-ready and prevents UI-only logic bugs.
+type NutritionEngineInput = {
+  meals: any[];
+  consumed: { calories: number; protein: number; carbs: number; fats: number };
+  targets: { calories: number; protein: number; carbs: number; fats: number; water: number };
+  waterTotalL: number;
+  smartWaterTarget: number;
+  workoutStartTime?: string | null;
+};
+
+type NutritionEngineOutput = {
+  status: 'On Track' | 'Needs Attention' | 'Completed' | 'Recovery Focus';
+  primaryInsight: string;
+  mealTimingInsight: string;
+  nextBestAction: string;
+  loggedMeals: Record<string, boolean>;
+  currentMealWindow: string;
+  workoutMealTiming: 'pre-workout' | 'post-workout' | 'normal';
+  dailyScore: number;
+  apiPayload: {
+    version: string;
+    loggedMeals: Record<string, boolean>;
+    consumed: { calories: number; protein: number; carbs: number; fats: number };
+    targets: { calories: number; protein: number; carbs: number; fats: number; water: number };
+    hydration: { currentL: number; targetL: number };
+    workout: { startTime: string | null; mealTiming: string };
+  };
+};
+
+const normalizeMealSlot = (value: any) => String(value || '').trim().toLowerCase();
+
+const getMealSlot = (meal: any) => normalizeMealSlot(meal?.meal || meal?.mealType || meal?.category || meal?.slot);
+
+const getLoggedMeals = (meals: any[]) => ({
+  breakfast: meals.some(m => getMealSlot(m) === 'breakfast'),
+  lunch: meals.some(m => getMealSlot(m) === 'lunch'),
+  dinner: meals.some(m => getMealSlot(m) === 'dinner'),
+  snacks: meals.some(m => getMealSlot(m) === 'snacks' || getMealSlot(m) === 'snack'),
+});
+
+const getCurrentMealWindow = () => {
+  const hour = new Date().getHours();
+  if (hour < 11) return 'breakfast';
+  if (hour < 16) return 'lunch';
+  if (hour < 21) return 'dinner';
+  return 'snacks';
+};
+
+const extractWorkoutStartTime = (workouts: any[]) => {
+  const workout = workouts.find(w => w?.startTime || w?.plannedStartTime || w?.time || w?.scheduledTime || w?.startedAt || w?.dateTime);
+  const raw = workout?.startTime || workout?.plannedStartTime || workout?.time || workout?.scheduledTime || workout?.startedAt || workout?.dateTime;
+  if (!raw) return null;
+  const text = String(raw);
+  const match = text.match(/(\d{1,2}):(\d{2})/);
+  if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+  return null;
+};
+
+const classifyMealAroundWorkoutStart = (mealTime: string | null, workoutStartTime?: string | null) => {
+  if (!mealTime || !workoutStartTime) return 'normal' as const;
+  const today = new Date().toISOString().split('T')[0];
+  const meal = new Date(`${today}T${mealTime}`);
+  const workout = new Date(`${today}T${workoutStartTime}`);
+  if (Number.isNaN(meal.getTime()) || Number.isNaN(workout.getTime())) return 'normal' as const;
+  const before = (workout.getTime() - meal.getTime()) / 60000;
+  const after = (meal.getTime() - workout.getTime()) / 60000;
+  if (before >= 30 && before <= 150) return 'pre-workout' as const;
+  if (after >= 45 && after <= 180) return 'post-workout' as const;
+  return 'normal' as const;
+};
+
+const buildNutritionEngine = (input: NutritionEngineInput): NutritionEngineOutput => {
+  const { meals, consumed, targets, waterTotalL, smartWaterTarget, workoutStartTime } = input;
+  const loggedMeals = getLoggedMeals(meals);
+  const currentMealWindow = getCurrentMealWindow();
+  const nowTime = new Date().toTimeString().slice(0, 5);
+  const workoutMealTiming = classifyMealAroundWorkoutStart(nowTime, workoutStartTime);
+
+  const proteinGap = Math.max(0, targets.protein - consumed.protein);
+  const calorieGap = Math.max(0, targets.calories - consumed.calories);
+  const waterGap = Math.max(0, smartWaterTarget - waterTotalL);
+  const proteinScore = Math.min(100, Math.round((consumed.protein / Math.max(1, targets.protein)) * 100));
+  const calorieScore = Math.min(100, Math.round((consumed.calories / Math.max(1, targets.calories)) * 100));
+  const hydrationScore = Math.min(100, Math.round((waterTotalL / Math.max(0.1, smartWaterTarget)) * 100));
+  const dailyScore = Math.round((proteinScore * 0.4) + (calorieScore * 0.35) + (hydrationScore * 0.25));
+
+  let primaryInsight = 'Nutrition is on track today.';
+  if (proteinGap > 40 && calorieGap > 600) {
+    primaryInsight = `Protein and calories are low. Add one balanced high-protein meal: ${Math.min(50, Math.round(proteinGap))}g protein and 500–700 kcal.`;
+  } else if (proteinGap > 40) {
+    primaryInsight = `Protein is low today. Aim for a realistic ${Math.min(50, Math.round(proteinGap))}g protein meal next.`;
+  } else if (calorieGap > 600) {
+    primaryInsight = `You are under-eating by around ${Math.round(calorieGap)} kcal. Add a balanced meal.`;
+  } else if (consumed.carbs > targets.carbs * 1.2) {
+    primaryInsight = 'Carbs are running high. Keep the next meal protein-focused.';
+  } else if (consumed.fats > targets.fats * 1.2) {
+    primaryInsight = 'Fats are running high. Keep the next meal lean and protein-focused.';
+  }
+
+  let mealTimingInsight = 'Keep meals balanced according to your daily macro target.';
+  if (workoutMealTiming === 'pre-workout') {
+    mealTimingInsight = 'Pre-workout window active: prioritize easy carbs + moderate protein. Keep fats low for digestion.';
+  } else if (workoutMealTiming === 'post-workout') {
+    mealTimingInsight = 'Post-workout window active: prioritize protein + carbs for recovery and glycogen refill.';
+  } else if (currentMealWindow === 'breakfast' && !loggedMeals.breakfast) {
+    mealTimingInsight = 'Morning focus: start with protein, slow carbs, and hydration.';
+  } else if (currentMealWindow === 'lunch' && !loggedMeals.lunch) {
+    mealTimingInsight = 'Lunch focus: balanced protein, carbs, vegetables, and hydration.';
+  } else if (currentMealWindow === 'dinner' && !loggedMeals.dinner) {
+    mealTimingInsight = 'Evening focus: lighter dinner with high protein and recovery foods.';
+  } else if (loggedMeals.dinner) {
+    mealTimingInsight = 'Dinner logged. Focus now on hydration, digestion, and recovery.';
+  } else if (loggedMeals[currentMealWindow as keyof typeof loggedMeals]) {
+    mealTimingInsight = `${currentMealWindow.charAt(0).toUpperCase() + currentMealWindow.slice(1)} already logged. Focus on remaining protein, water, and recovery.`;
+  }
+
+  let nextBestAction = 'Stay consistent.';
+  if (waterGap >= 0.5) nextBestAction = `Add ${Math.round(Math.min(0.75, waterGap) * 1000)}ml water.`;
+  if (proteinGap > 25) nextBestAction = `Add ${Math.min(40, Math.round(proteinGap))}g lean protein.`;
+  if (!loggedMeals.dinner && currentMealWindow === 'dinner') nextBestAction = 'Create a high-protein dinner.';
+  if (loggedMeals.dinner && waterGap < 0.5 && proteinGap <= 25) nextBestAction = 'Wind down: digestion, hydration, and sleep support.';
+
+  let status: NutritionEngineOutput['status'] = 'Needs Attention';
+  const proteinOk = consumed.protein >= targets.protein * 0.75;
+  const caloriesOk = consumed.calories >= targets.calories * 0.55;
+  const carbsHigh = consumed.carbs > targets.carbs * 1.25;
+  const fatsHigh = consumed.fats > targets.fats * 1.25;
+  if (proteinOk && caloriesOk && !carbsHigh && !fatsHigh) status = 'On Track';
+  if (loggedMeals.dinner && dailyScore >= 75) status = 'Recovery Focus';
+  if (dailyScore >= 90 && waterGap <= 0.2) status = 'Completed';
+
+  return {
+    status,
+    primaryInsight,
+    mealTimingInsight,
+    nextBestAction,
+    loggedMeals,
+    currentMealWindow,
+    workoutMealTiming,
+    dailyScore,
+    apiPayload: {
+      version: 'nutrition-engine-v1',
+      loggedMeals,
+      consumed,
+      targets,
+      hydration: { currentL: waterTotalL, targetL: smartWaterTarget },
+      workout: { startTime: workoutStartTime || null, mealTiming: workoutMealTiming },
+    },
+  };
+};
+
+
 type MacroRef = { calories: number; protein: number; carbs: number; fats: number; qty: number; unit: string; source?: string; };
 
 const COMMON_INGREDIENT_MACROS: Array<{ keys: string[]; ref: MacroRef }> = [
@@ -333,52 +487,23 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   const smartWaterTarget = hydrationContext.target;
   const waterGap = Math.max(0, smartWaterTarget - waterTotalL);
 
-  const nutritionInsight = useMemo(() => {
-    const proteinGap = Math.max(0, targets.protein - consumed.protein);
-    const calorieGap = Math.max(0, targets.calories - consumed.calories);
-    const realisticProteinTarget = Math.min(50, Math.round(proteinGap));
+  const workoutStartTime = useMemo(() => extractWorkoutStartTime(workoutArr), [workoutArr]);
 
-    if (proteinGap > 40 && calorieGap > 600) {
-      return 'Protein and calories are low. Add one balanced high-protein meal: ' + realisticProteinTarget + 'g protein and 500–700 kcal.';
-    }
+  const nutritionEngine = useMemo(() => buildNutritionEngine({
+    meals: mealsArr,
+    consumed,
+    targets,
+    waterTotalL,
+    smartWaterTarget,
+    workoutStartTime,
+  }), [mealsArr, consumed, targets, waterTotalL, smartWaterTarget, workoutStartTime]);
 
-    if (proteinGap > 40) {
-      return 'Protein is low today. Aim for a realistic ' + realisticProteinTarget + 'g protein meal next.';
-    }
+  const nutritionInsight = nutritionEngine.primaryInsight;
+  const nutritionStatus = nutritionEngine.status;
+  const mealSuggestion = nutritionEngine.mealTimingInsight;
+  const nextBestNutritionAction = nutritionEngine.nextBestAction;
+  const dailyNutritionScore = nutritionEngine.dailyScore;
 
-    if (calorieGap > 600) {
-      return 'You are under-eating by around ' + Math.round(calorieGap) + ' kcal. Add a balanced meal.';
-    }
-
-    if (consumed.carbs > targets.carbs * 1.2) {
-      return 'Carbs are running high. Keep the next meal protein-focused.';
-    }
-
-    if (consumed.fats > targets.fats * 1.2) {
-      return 'Fats are running high. Keep the next meal lean and protein-focused.';
-    }
-
-    return 'Nutrition is on track today.';
-  }, [consumed, targets]);
-
-  const nutritionStatus = useMemo(() => {
-    const proteinOk = consumed.protein >= targets.protein * 0.75;
-    const caloriesOk = consumed.calories >= targets.calories * 0.55;
-    const carbsHigh = consumed.carbs > targets.carbs * 1.25;
-    const fatsHigh = consumed.fats > targets.fats * 1.25;
-
-    return proteinOk && caloriesOk && !carbsHigh && !fatsHigh
-      ? 'On Track'
-      : 'Needs Attention';
-  }, [consumed, targets]);
-
-  const mealSuggestion = useMemo(() => {
-    const hour = new Date().getHours();
-
-    if (hour < 12) return 'Morning focus: protein-rich breakfast + hydration.';
-    if (hour < 17) return 'Afternoon focus: balanced carbs + protein for energy.';
-    return 'Evening focus: lighter dinner with high protein and recovery foods.';
-  }, []);
   // Conversions for non-standard serving sizes
   const CONVERSIONS: Record<string, number> = {
     '100g': 100,
@@ -1182,7 +1307,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
               <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime">
                 Gym-E Nutrition Insight
               </div>
-              <div className={'rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest ' + (nutritionStatus === 'On Track' ? 'bg-lime/20 text-lime border border-lime/20' : 'bg-pink/10 text-pink border border-pink/20')}>
+              <div className={'rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest ' + (['On Track', 'Completed', 'Recovery Focus'].includes(nutritionStatus) ? 'bg-lime/20 text-lime border border-lime/20' : 'bg-pink/10 text-pink border border-pink/20')}>
                 {nutritionStatus}
               </div>
             </div>
@@ -1192,6 +1317,16 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
             <p className="mt-2 text-[11px] text-white/40 font-bold uppercase tracking-widest">
               {mealSuggestion}
             </p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-[9px] font-black uppercase tracking-widest text-white/30">Nutrition Score</div>
+                <div className="mt-1 text-lg font-black text-lime">{dailyNutritionScore}<span className="text-[10px] text-white/30">/100</span></div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-[9px] font-black uppercase tracking-widest text-white/30">Next Best Action</div>
+                <div className="mt-1 text-[11px] font-bold leading-snug text-white/70">{nextBestNutritionAction}</div>
+              </div>
+            </div>
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button
                 onClick={() => {
