@@ -495,7 +495,53 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
     return { calories: totalCal, protein, carbs, fats, water };
   }, [targets, burned]);
 
+  
   const waterTotal = waterArr.reduce((acc, w) => acc + w.amount, 0) / 1000;
+
+// 🔥 ADD THIS (STEP 1 - RECOVERY SYSTEM)
+const recoveryData = useMemo(() => {
+  const sleepScore = 75;
+
+  const strainScore = Math.min(
+    100,
+    workoutArr.length * 20 + (stepsToday / stepGoal) * 50
+  );
+
+  const nutritionScore = Math.min(
+    100,
+    (consumed.protein / dynamicTargets.protein) * 100
+  );
+
+  const hydrationScore = Math.min(
+    100,
+    (waterTotal / dynamicTargets.water) * 100
+  );
+
+  const score =
+    sleepScore * 0.3 +
+    strainScore * 0.25 +
+    nutritionScore * 0.2 +
+    hydrationScore * 0.15; 
+    
+
+  let status = "Low";
+  if (score > 75) status = "High";
+  else if (score > 55) status = "Moderate";
+
+  return {
+    score: Math.round(score),
+    status,
+  };
+}, [
+  workoutArr,
+  stepsToday,
+  stepGoal,
+  consumed.protein,
+  dynamicTargets.protein,
+  waterTotal,
+  dynamicTargets.water,
+]);
+
   const netCalories = consumed.calories - burned;
   const remaining = targets.calories - netCalories;
   const progressPct = Math.min(100, Math.round((consumed.calories / dynamicTargets.calories) * 100));
@@ -512,6 +558,7 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
       targets: dynamicTargets,
       workouts: workoutArr,
       waterTotal,
+      recovery: recoveryData,
     });
     setAiInsight(insight);
     setInsightLoading(false);
@@ -564,12 +611,11 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
             onClick={async () => {
               const currentMl = Math.round(waterTotal * 1000);
               const nextTotalMl = currentMl + 500;
-
               setData((prev: AppData) => ({
                 ...prev,
                 water: {
                   ...prev.water,
-                  [today]: [{ amount: nextTotalMl, time: Date.now() }],
+                  [today]: [...(prev.water[today] || []), { amount: 500, time: Date.now() }],
                 },
               }));
 
@@ -615,6 +661,12 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
       </div>
     );
   };
+  const recoveryColor =
+  recoveryData.score > 75
+    ? "text-lime"
+    : recoveryData.score > 55
+    ? "text-yellow-400"
+    : "text-red-400";
 
   return (
     <div className="space-y-8">
@@ -631,7 +683,46 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
         </div>
       </header>
 
-      <TodayActionPanel />
+<section className="rounded-3xl border border-lime/20 bg-panel/80 p-5 shadow-xl shadow-lime/5">
+  <div className="flex items-center justify-between gap-4">
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[0.25em] text-lime">
+        Daily Readiness
+      </p>
+
+      <h2 className={`mt-2 text-4xl font-black ${recoveryColor}`}>
+        {recoveryData.score}%
+      </h2>
+
+      <p className="text-xs font-bold uppercase tracking-widest text-white/40">
+        {recoveryData.status} Readiness
+      </p>
+    </div>
+
+    <div className="text-right">
+      <p className="text-[10px] font-black uppercase tracking-widest text-white/40">
+        Gym-E Decision
+      </p>
+
+      <p className="mt-2 text-sm font-black text-white">
+        {recoveryData.status === "High" && "Train Hard"}
+        {recoveryData.status === "Moderate" && "Train Moderate"}
+        {recoveryData.status === "Low" && "Recover Today"}
+      </p>
+    </div>
+  </div>
+
+  <p className="mt-4 text-sm text-white/60">
+    {recoveryData.status === "High" &&
+      "Your readiness is strong. Push intensity with controlled progressive overload."}
+    {recoveryData.status === "Moderate" &&
+      "You are ready for moderate training. Focus on clean form, protein and hydration."}
+    {recoveryData.status === "Low" &&
+      "Recovery is limited today. Prioritize mobility, hydration and sleep."}
+  </p>
+</section>
+
+<TodayActionPanel />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         <div className="xl:col-span-2 space-y-8">
@@ -808,7 +899,7 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
                       ...prev,
                       water: {
                         ...prev.water,
-                        [today]: [{ amount: nextTotalMl, time: Date.now() }],
+                        [today]: [...(prev.water[today] || []), { amount: amt, time: Date.now() }],
                       },
                     }));
 
