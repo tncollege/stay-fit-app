@@ -938,7 +938,7 @@ const recoveryData = useMemo(() => {
                   Let&apos;s start your session 💪
                 </div>
                 <p className="text-[11px] opacity-50">
-                  Gym-E recommends moderate intensity today.
+                Gym-E recommends {recoveryData.status.toLowerCase()} intensity today.
                 </p>
               </div>
             )}
@@ -954,8 +954,14 @@ const recoveryData = useMemo(() => {
           <div className="p-5 border border-border border-dashed rounded-2xl text-center bg-white/[0.02]">
             <div className="label-small text-lime mb-2">Gym-E Tip</div>
             <p className="text-[11px] leading-relaxed opacity-60">
-              &quot;Your recovery is currently {round(82)}%. Maintain moderate intensity for today's session.&quot;
-            </p>
+  {`Your recovery is currently ${Math.round(recoveryData.score)}%. ${
+    recoveryData.status === "High"
+      ? "Push intensity and maximize performance."
+      : recoveryData.status === "Moderate"
+      ? "Maintain controlled training and focus on form."
+      : "Focus on recovery, hydration and mobility."
+  }`}
+</p>
           </div>
         </aside>
       </div>
