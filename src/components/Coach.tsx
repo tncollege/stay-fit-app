@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Brain, Send, Sparkles, Utensils, Dumbbell, Activity, CheckCircle2, ChevronRight, RefreshCw, X, MessageSquare, ListTodo, Soup, Info, Pill } from 'lucide-react';
 import { AppData, Profile } from '../lib/types';
@@ -16,6 +16,93 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
   const [supplementPlan, setSupplementPlan] = useState(data.cachedSupplementPlan || '');
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
 
+  const todayKey = getTodayKey();
+
+  const coachContext = useMemo(() => {
+    const todayMeals = data.meals?.[todayKey] || [];
+    const todayWorkouts = data.workouts?.[todayKey] || [];
+    const todayWater = data.water?.[todayKey] || [];
+    const todaySteps = data.steps?.[todayKey] || 0;
+    const todayRecovery = data.recovery?.[todayKey] || {};
+
+    const calories = todayMeals.reduce((sum, m) => sum + Number(m.calories || 0), 0);
+    const protein = todayMeals.reduce((sum, m) => sum + Number(m.protein || 0), 0);
+    const carbs = todayMeals.reduce((sum, m) => sum + Number(m.carbs || 0), 0);
+    const fats = todayMeals.reduce((sum, m) => sum + Number(m.fats || 0), 0);
+    const waterLitres = todayWater.reduce((sum, w) => sum + Number(w.amount || 0), 0) / 1000;
+    const burned = todayWorkouts.reduce((sum, w) => sum + Number(w.caloriesBurned || 0), 0);
+
+    const weight = data.profile.currentWeight ?? 70;
+    let targetCalories = weight * 30;
+    if (data.profile.goal === 'Fat Loss') targetCalories -= 500;
+    if (data.profile.goal === 'Muscle Gain') targetCalories += 300;
+
+    const targets = {
+      calories: Math.round(targetCalories),
+      protein: Math.round(weight * 2),
+      carbs: Math.round((targetCalories * 0.4) / 4),
+      fats: Math.round((targetCalories * 0.3) / 9),
+      water: 3.5,
+    };
+
+    let weeklyLoad = 0;
+    let workoutsThisWeek = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      const workouts = data.workouts?.[key] || [];
+      workoutsThisWeek += workouts.length;
+      weeklyLoad += workouts.reduce((sum, w) => sum + Number(w.caloriesBurned || 0), 0);
+    }
+
+    const recoveryScore = (() => {
+      const sleep = Number((todayRecovery as any)?.sleep || 70);
+      const proteinRatio = targets.protein ? Math.min(1, protein / targets.protein) : 0.5;
+      const waterRatio = targets.water ? Math.min(1, waterLitres / targets.water) : 0.5;
+      const strainPenalty = Math.min(25, weeklyLoad / 160);
+      return Math.max(35, Math.min(95, Math.round(sleep * 0.4 + proteinRatio * 25 + waterRatio * 20 + 20 - strainPenalty)));
+    })();
+
+    const fatigueStatus = weeklyLoad > 3000 ? 'High Fatigue' : weeklyLoad > 1800 ? 'Moderate Fatigue' : 'Normal Fatigue';
+    const coachMode = recoveryScore > 75 && fatigueStatus === 'Normal Fatigue'
+      ? 'Performance'
+      : recoveryScore >= 55
+      ? 'Controlled Build'
+      : 'Recovery';
+
+    return {
+      date: todayKey,
+      profile: data.profile,
+      meals: todayMeals,
+      workouts: todayWorkouts,
+      recovery: todayRecovery,
+      consumed: { calories, protein, carbs, fats },
+      targets,
+      waterLitres,
+      burned,
+      steps: todaySteps,
+      weeklyLoad,
+      workoutsThisWeek,
+      recoveryScore,
+      fatigueStatus,
+      coachMode,
+      lastWorkout: todayWorkouts[todayWorkouts.length - 1] || null,
+      activePlans: {
+        workoutPlan: Boolean(workoutPlan && !workoutPlan.toUpperCase().includes('ERROR')),
+        mealPlan: Boolean(mealPlan && !mealPlan.toUpperCase().includes('ERROR')),
+        supplementPlan: Boolean(supplementPlan && !supplementPlan.toUpperCase().includes('ERROR')),
+      },
+    };
+  }, [data, todayKey, workoutPlan, mealPlan, supplementPlan]);
+
+  const coachTone = coachContext.coachMode === 'Performance'
+    ? 'Push performance, but keep technical form strict.'
+    : coachContext.coachMode === 'Controlled Build'
+    ? 'Train smart with controlled volume and protect recovery.'
+    : 'Prioritize recovery, mobility, hydration and sleep.';
+
+
   const isWithinLastWeek = (dateString?: string) => {
     if (!dateString) return false;
     const lastDate = new Date(dateString);
@@ -25,39 +112,56 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
     return diffDays < 7;
   };
 
-  const handleAsk = async () => {
-    if (!question) return;
-    
+  const handleAsk = async (forcedQuestion?: string) => {
+    const finalQuestion = (forcedQuestion || question).trim();
+    if (!finalQuestion || loading) return;
+
     const today = new Date().toDateString();
     let queryCount = data.apiQueryCount || 0;
-    
-    // Reset if it's a new day
+
     if (data.lastApiQueryDate !== today) {
       queryCount = 0;
     }
 
     if (queryCount >= 5) {
-      setResponse("DAILY QUANTUM LIMIT REACHED: Your allocation of 5 metabolic consulting cycles per day has been depleted. The link will refresh tomorrow.");
+      setResponse('Daily AI limit reached. Your 5 coaching queries reset tomorrow. You can still use saved plans and quick actions.');
       setQuestion('');
       return;
     }
 
     setLoading(true);
-    const ans = await askAiCoach(question, {
-      profile: data.profile,
-      today: data.meals[getTodayKey()] || [],
-      recovery: data.recovery[getTodayKey()] || {},
-      insights: []
-    });
-    
-    setResponse(ans);
-    setData((prev: AppData) => ({ 
-      ...prev, 
-      apiQueryCount: queryCount + 1,
-      lastApiQueryDate: today
-    }));
-    setLoading(false);
-    setQuestion('');
+
+    try {
+      const ans = await askAiCoach(finalQuestion, {
+        profile: data.profile,
+        today: coachContext.meals,
+        recovery: coachContext.recovery,
+        insights: [],
+        coachContext,
+        consumed: coachContext.consumed,
+        targets: coachContext.targets,
+        workouts: coachContext.workouts,
+        weeklyLoad: coachContext.weeklyLoad,
+        workoutsThisWeek: coachContext.workoutsThisWeek,
+        fatigueStatus: coachContext.fatigueStatus,
+        recoveryScore: coachContext.recoveryScore,
+        coachMode: coachContext.coachMode,
+        lastWorkout: coachContext.lastWorkout,
+      });
+
+      setResponse(ans);
+      setData((prev: AppData) => ({
+        ...prev,
+        apiQueryCount: queryCount + 1,
+        lastApiQueryDate: today,
+      }));
+    } catch (err) {
+      console.error('Gym-E Coach V2 error:', err);
+      setResponse('Gym-E could not connect right now. Your app data is safe. Try again in a moment.');
+    } finally {
+      setLoading(false);
+      setQuestion('');
+    }
   };
 
   const isError = (plan: string) => {
@@ -188,6 +292,25 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
         </div>
       </header>
 
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <CoachMetric label="Mode" value={coachContext.coachMode} tone={coachContext.coachMode === 'Recovery' ? 'pink' : coachContext.coachMode === 'Performance' ? 'lime' : 'sky'} />
+        <CoachMetric label="Recovery" value={`${coachContext.recoveryScore}%`} tone={coachContext.recoveryScore >= 75 ? 'lime' : coachContext.recoveryScore >= 55 ? 'sky' : 'pink'} />
+        <CoachMetric label="Fatigue" value={coachContext.fatigueStatus.replace(' Fatigue', '')} tone={coachContext.fatigueStatus === 'High Fatigue' ? 'pink' : 'lime'} />
+        <CoachMetric label="7D Load" value={`${Math.round(coachContext.weeklyLoad)} kcal`} tone="sky" />
+      </section>
+
+      <div className="rounded-3xl border border-lime/20 bg-lime/10 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime mb-1">Coach V2 Decision Layer</div>
+          <p className="text-sm font-bold text-white/80">{coachTone}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => handleAsk('Generate my best workout recommendation for today using my recovery, fatigue, nutrition and recent workouts.')} className="px-4 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest">Today Workout</button>
+          <button onClick={() => handleAsk('Fix my diet for the rest of today using my current calories, protein, macros and goal.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Fix Diet</button>
+          <button onClick={() => handleAsk('Give me a recovery protocol for tonight based on my recovery score, fatigue and training load.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Recover Me</button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-8">
         <AnimatePresence mode="wait">
           {activeSubTab === 'chat' && (
@@ -260,12 +383,12 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <QuickAction icon={<Utensils />} label="Optimize my protein intake" onClick={() => setQuestion("How should I optimize my protein intake for my current goal and weight?")} />
-                <QuickAction icon={<Activity />} label="Training recovery tips" onClick={() => setQuestion("Based on my recent workouts and recovery, what should I train today?")} />
-                <QuickAction icon={<Brain />} label="Focus & motivation" onClick={() => setQuestion("I'm feeling a bit demotivated. Give me some tactical advice to stay focused on my 7-day streak.")} />
-                <QuickAction icon={<Dumbbell />} label="Plateau breaking" onClick={() => setQuestion("I feel like I've hit a plateau in my fat loss. What adjustments should I consider?")} />
+                <QuickAction icon={<Utensils />} label="Optimize my protein intake" onClick={() => handleAsk("How should I optimize my protein intake for my current goal, weight, meals and protein gap?")} />
+                <QuickAction icon={<Activity />} label="Training recovery tips" onClick={() => handleAsk("Based on my recent workouts, recovery and weekly load, what should I train today?")} />
+                <QuickAction icon={<Brain />} label="Focus & motivation" onClick={() => handleAsk("I am feeling demotivated. Give me tactical advice based on my current app data and today's status.")} />
+                <QuickAction icon={<Dumbbell />} label="Plateau breaking" onClick={() => handleAsk("I feel like I have hit a plateau. Analyze my calories, protein, workouts and recovery and suggest adjustments.")} />
                 <QuickAction icon={<Pill />} label="Supplement protocol" onClick={() => setActiveSubTab('supplement')} />
-                <QuickAction icon={<Info />} label="Metabolic flexibility" onClick={() => setQuestion("Explain how I can improve my metabolic flexibility given my current diet profile.")} />
+                <QuickAction icon={<Info />} label="Metabolic flexibility" onClick={() => handleAsk("Explain how I can improve metabolic flexibility using my current diet, workouts and recovery status.")} />
               </div>
             </motion.div>
           )}
@@ -475,6 +598,18 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
           )}
         </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+
+function CoachMetric({ label, value, tone = 'lime' }: { label: string; value: string; tone?: 'lime' | 'sky' | 'pink' }) {
+  const toneClass = tone === 'pink' ? 'text-pink border-pink/20 bg-pink/10' : tone === 'sky' ? 'text-sky border-sky/20 bg-sky/10' : 'text-lime border-lime/20 bg-lime/10';
+
+  return (
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className="text-[9px] font-black uppercase tracking-[0.25em] opacity-70 mb-2">{label}</div>
+      <div className="text-lg font-black tracking-tight">{value}</div>
     </div>
   );
 }
