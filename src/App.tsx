@@ -2029,16 +2029,40 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
   const isMetric = data.profile.unitsSystem === 'metric';
   const weightUnit = isMetric ? 'kg' : 'lbs';
 
-  const motivationLayer = useMemo(() => {
+  const retentionEngine = useMemo(() => {
     const score = weeklySummary.consistencyScore || 0;
     const progress = stats.progress || 0;
     const goalMode = data.profile.goal || 'Fitness';
+    const isGainGoal = goalMode === 'Muscle Gain';
+    const delta = weeklySummary.weightDelta || 0;
+
+    const directionGood = isGainGoal ? delta > 0 : delta < 0;
+    const directionBad = isGainGoal ? delta < 0 : delta > 0;
+
+    const dynamicHeadline = (() => {
+      if (score >= 85 && directionGood) return '🔥 You are in transformation mode';
+      if (score >= 75) return '💪 Strong week. Keep the chain alive';
+      if (progress >= 90) return '🏁 Finish line is close';
+      if (directionGood) return '📉 Trend is finally moving your way';
+      if (directionBad) return '⚡ Tighten today, not tomorrow';
+      return '🎯 Hold the routine. The body follows consistency';
+    })();
+
+    const dynamicMessage = (() => {
+      if (score >= 85 && directionGood) return 'Training, protein and movement are aligned. Repeat this week exactly.';
+      if (score < 40) return 'Do not chase perfection today. Log food, hit steps, and complete one simple workout.';
+      if (weeklySummary.proteinScore < 70) return 'Protein is the easiest win today. Add one clean serving and protect muscle.';
+      if (weeklySummary.stepsScore < 70) return 'Movement is the missing lever. A 20-minute walk can change the weekly score.';
+      if (weeklySummary.workoutScore < 60) return 'One more workout will lift your consistency score and restart momentum.';
+      if (directionBad) return 'The trend moved against the goal. Control calories, sodium, sleep, and weekend meals.';
+      return 'You are building the invisible part of transformation — consistency.';
+    })();
 
     const stage = (() => {
-      if (progress >= 90) return { label: 'Finish Line', message: 'You are close. Protect the routine and finish strong.' };
-      if (progress >= 60) return { label: 'Momentum Zone', message: 'Momentum is building. Keep the next 7 days clean.' };
-      if (progress >= 30) return { label: 'Foundation Built', message: 'The base is ready. Now stack small wins daily.' };
-      return { label: 'Ignition Phase', message: 'Start simple. Log daily and create the first streak.' };
+      if (progress >= 90) return { label: 'Finish Line', tone: 'Final push. Do not loosen the process now.' };
+      if (progress >= 60) return { label: 'Momentum Zone', tone: 'You have crossed the hard middle. Stay boring and consistent.' };
+      if (progress >= 30) return { label: 'Foundation Built', tone: 'The system is working. Now stack weeks, not emotions.' };
+      return { label: 'Ignition Phase', tone: 'Early progress is fragile. Make logging and movement non-negotiable.' };
     })();
 
     const badge = (() => {
@@ -2048,22 +2072,36 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
       return { title: 'Restart Week', icon: Star, detail: 'No guilt. Restart with logging and movement today.' };
     })();
 
+    const journeyText = `${round(stats.start)} ${weightUnit} → ${round(stats.current)} ${weightUnit} → ${round(stats.target)} ${weightUnit}`;
+    const remaining = Math.max(0, Math.abs(round(stats.current - stats.target)));
+    const achieved = Math.max(0, Math.abs(round(stats.start - stats.current)));
+    const weeklyDeltaLabel = `${delta > 0 ? '+' : ''}${delta} ${weightUnit}`;
+
+    const milestones = [
+      { label: 'First Log', done: history.length > 0 },
+      { label: '25% Journey', done: progress >= 25 },
+      { label: '50% Journey', done: progress >= 50 },
+      { label: '75% Journey', done: progress >= 75 },
+      { label: 'Goal Zone', done: progress >= 95 },
+    ];
+
     const quote = goalMode === 'Muscle Gain'
-      ? 'Build the body one quality session at a time.'
-      : 'Small deficits, strong lifts, daily steps — that is the formula.';
+      ? 'Muscle is built by progressive effort, food discipline, and recovery.'
+      : 'Fat loss is not punishment. It is controlled repetition.';
 
-    return { stage, badge, quote };
-  }, [weeklySummary.consistencyScore, stats.progress, data.profile.goal]);
+    return { dynamicHeadline, dynamicMessage, stage, badge, journeyText, remaining, achieved, weeklyDeltaLabel, milestones, quote };
+  }, [weeklySummary, stats, data.profile.goal, history.length, weightUnit]);
 
-  const motivationMetrics = [
-    { label: 'Goal', value: stats.progress, suffix: '%', accent: 'bg-lime', text: 'text-lime' },
-    { label: 'Weekly', value: weeklySummary.consistencyScore, suffix: '%', accent: 'bg-lime', text: 'text-lime' },
+  const v3Metrics = [
+    { label: 'Goal Journey', value: stats.progress, suffix: '%', accent: 'bg-lime', text: 'text-lime' },
+    { label: 'Weekly Score', value: weeklySummary.consistencyScore, suffix: '%', accent: 'bg-lime', text: 'text-lime' },
     { label: 'Workout', value: weeklySummary.workoutScore, suffix: '%', accent: 'bg-sky', text: 'text-sky' },
     { label: 'Protein', value: weeklySummary.proteinScore, suffix: '%', accent: 'bg-pink', text: 'text-pink' },
+    { label: 'Steps', value: weeklySummary.stepsScore, suffix: '%', accent: 'bg-sky', text: 'text-sky' },
   ];
 
-  const progressGlow = Math.max(6, Math.min(100, stats.progress || 0));
-  const BadgeIcon = motivationLayer.badge.icon;
+  const progressGlow = Math.max(4, Math.min(100, stats.progress || 0));
+  const BadgeIcon = retentionEngine.badge.icon;
 
   return (
     <div className="space-y-8">
@@ -2096,48 +2134,74 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
         <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-lime/10 blur-3xl" />
         <div className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-sky/10 blur-3xl" />
 
-        <div className="relative grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 items-stretch">
-          <div className="flex flex-col md:flex-row gap-6 items-center md:items-stretch">
-            <div className="relative h-52 w-52 shrink-0 rounded-full grid place-items-center bg-black/30 border border-white/10">
-              <div className="absolute inset-4 rounded-full border border-white/10" />
-              <motion.div
-                initial={{ rotate: -90 }}
-                animate={{ rotate: 270 }}
-                transition={{ duration: 1.1, ease: 'easeOut' }}
-                className="absolute inset-0 rounded-full"
-                style={{ background: `conic-gradient(rgba(215,255,0,0.95) ${progressGlow * 3.6}deg, rgba(255,255,255,0.06) 0deg)` }}
-              />
-              <div className="relative h-40 w-40 rounded-full bg-panel border border-white/10 grid place-items-center text-center shadow-inner">
-                <div>
-                  <div className="text-5xl font-black text-lime leading-none">{stats.progress}%</div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/35 mt-2">Journey Done</div>
+        <div className="relative grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-stretch">
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col md:flex-row gap-6 items-center md:items-stretch">
+              <div className="relative h-56 w-56 shrink-0 rounded-full grid place-items-center bg-black/30 border border-white/10 shadow-2xl shadow-lime/10">
+                <motion.div
+                  initial={{ rotate: -90 }}
+                  animate={{ rotate: 270 }}
+                  transition={{ duration: 1.1, ease: 'easeOut' }}
+                  className="absolute inset-0 rounded-full"
+                  style={{ background: `conic-gradient(rgba(215,255,0,0.95) ${progressGlow * 3.6}deg, rgba(255,255,255,0.06) 0deg)` }}
+                />
+                <div className="absolute inset-4 rounded-full border border-white/10 bg-black/30" />
+                <div className="relative h-40 w-40 rounded-full bg-panel border border-white/10 grid place-items-center text-center shadow-inner p-6">
+                  <div>
+                    <div className="text-5xl font-black text-lime leading-none">{stats.progress}%</div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/35 mt-2">Journey Done</div>
+                    <div className="text-[10px] text-white/45 mt-2 font-bold">{retentionEngine.achieved} {weightUnit} achieved</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <div className="inline-flex items-center gap-2 w-fit rounded-full bg-lime/10 border border-lime/20 px-3 py-1 text-[9px] font-black uppercase tracking-[0.22em] text-lime mb-4">
+                  <Flame size={13} /> Progress V3 Retention Engine
+                </div>
+                <h3 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">
+                  {retentionEngine.dynamicHeadline}
+                </h3>
+                <p className="text-sm md:text-base text-white/65 mt-3 max-w-2xl leading-relaxed">
+                  {retentionEngine.dynamicMessage}
+                </p>
+                <div className="mt-4 rounded-2xl bg-black/25 border border-white/10 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime">Journey Map</div>
+                      <div className="text-xs text-white/45 font-bold mt-1">{retentionEngine.journeyText}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-black text-white">{retentionEngine.remaining} {weightUnit}</div>
+                      <div className="text-[9px] font-black uppercase tracking-widest text-white/35">left</div>
+                    </div>
+                  </div>
+                  <div className="relative h-3 rounded-full bg-white/5 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${stats.progress}%` }}
+                      className="h-full bg-lime shadow-[0_0_14px_rgba(215,255,0,0.5)]"
+                    />
+                  </div>
+                  <div className="mt-3 flex justify-between text-[9px] font-black uppercase tracking-widest text-white/35">
+                    <span>Start</span><span>Current</span><span>Target</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 min-w-0 flex flex-col justify-center">
-              <div className="inline-flex items-center gap-2 w-fit rounded-full bg-lime/10 border border-lime/20 px-3 py-1 text-[9px] font-black uppercase tracking-[0.22em] text-lime mb-4">
-                <Flame size={13} /> Visual Motivation Layer
-              </div>
-              <h3 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">
-                {motivationLayer.stage.label}
-              </h3>
-              <p className="text-sm md:text-base text-white/60 mt-3 max-w-2xl">
-                {motivationLayer.stage.message}
-              </p>
-              <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-                {motivationMetrics.map((item) => (
-                  <div key={item.label} className="rounded-2xl bg-black/25 border border-white/10 p-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-white/35">{item.label}</span>
-                      <span className={`text-[10px] font-black ${item.text}`}>{item.value}{item.suffix}</span>
-                    </div>
-                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, item.value)}%` }} className={`h-full ${item.accent}`} />
-                    </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {v3Metrics.map((item) => (
+                <div key={item.label} className="rounded-2xl bg-black/25 border border-white/10 p-3">
+                  <div className="flex justify-between items-center mb-2 gap-2">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-white/35 truncate">{item.label}</span>
+                    <span className={`text-[10px] font-black ${item.text}`}>{item.value}{item.suffix}</span>
                   </div>
-                ))}
-              </div>
+                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, item.value)}%` }} className={`h-full ${item.accent}`} />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -2148,16 +2212,37 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                   <BadgeIcon className="text-lime" size={22} />
                 </div>
                 <div>
-                  <div className="text-lg font-black">{motivationLayer.badge.title}</div>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Today’s badge</div>
+                  <div className="text-lg font-black">{retentionEngine.badge.title}</div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Dynamic badge</div>
                 </div>
               </div>
-              <p className="text-sm text-white/55 leading-relaxed">{motivationLayer.badge.detail}</p>
+              <p className="text-sm text-white/55 leading-relaxed">{retentionEngine.badge.detail}</p>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-black/30 border border-white/10 p-3">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/35">Weekly Delta</div>
+                  <div className={`text-xl font-black mt-1 ${weeklySummary.weightDelta <= 0 ? 'text-lime' : 'text-pink'}`}>{retentionEngine.weeklyDeltaLabel}</div>
+                </div>
+                <div className="rounded-2xl bg-black/30 border border-white/10 p-3">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/35">Phase</div>
+                  <div className="text-sm font-black text-sky mt-1">{retentionEngine.stage.label}</div>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/35">Milestone Unlocks</div>
+                {retentionEngine.milestones.map((m) => (
+                  <div key={m.label} className="flex items-center justify-between rounded-xl bg-black/25 border border-white/5 px-3 py-2">
+                    <span className="text-xs font-bold text-white/65">{m.label}</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${m.done ? 'text-lime' : 'text-white/25'}`}>{m.done ? 'Unlocked' : 'Locked'}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="mt-6 rounded-2xl bg-lime/10 border border-lime/20 p-4">
               <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime mb-2">Mindset</div>
-              <p className="text-sm font-bold text-white">“{motivationLayer.quote}”</p>
+              <p className="text-sm font-bold text-white">“{retentionEngine.quote}”</p>
             </div>
           </div>
         </div>
