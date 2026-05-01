@@ -339,6 +339,38 @@ function shouldShowDistance(value: string) {
   return true;
 }
 
+function getCardioCaloriesPerMinute(exercise: string, fatigueStatus?: string) {
+  const ex = exercise.toLowerCase();
+  let base = 7;
+
+  if (ex.includes('walk')) base = 4;
+  if (ex.includes('run') || ex.includes('hiit') || ex.includes('jump')) base = 10;
+  if (ex.includes('cycling') || ex.includes('bike') || ex.includes('row')) base = 8;
+  if (ex.includes('stair') || ex.includes('climber')) base = 9;
+  if (ex.includes('swim')) base = 8;
+  if (ex.includes('elliptical')) base = 7;
+
+  if (fatigueStatus === 'High Fatigue') return Math.max(3, base - 2);
+  if (fatigueStatus === 'Moderate Fatigue') return Math.max(3, base - 1);
+  return base;
+}
+
+function getConditioningAdvice(readiness: number, fatigueStatus: string, mode: 'Cardio' | 'Sports' | 'Yoga') {
+  if (mode === 'Yoga') {
+    if (readiness < 55 || fatigueStatus === 'High Fatigue') return 'Recovery flow: keep it easy, nasal breathing, long holds.';
+    if (readiness > 75 && fatigueStatus === 'Normal Fatigue') return 'Performance flow: add mobility, balance and controlled strength holds.';
+    return 'Controlled flow: focus on mobility, breath and joint quality.';
+  }
+
+  if (readiness < 55 || fatigueStatus === 'High Fatigue') return 'Low-intensity zone today. Avoid hard intervals and keep the session restorative.';
+  if (readiness > 75 && fatigueStatus === 'Normal Fatigue') return 'Good day for higher output. Intervals or tempo work can be added.';
+  return 'Moderate effort recommended. Keep intensity controlled and finish fresh.';
+}
+
+function normalizeForMatch(value: string) {
+  return normalizeExerciseName(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 export default function WorkoutView({
   data,
   setData,
@@ -1150,8 +1182,9 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 startPlanExercise={startPlanExercise}
                 completedPlanExercises={completedPlanExercises}
                 togglePlanExerciseComplete={togglePlanExerciseComplete}
-  setShowTipsFor={setShowTipsFor}   
-/>
+                currentSets={currentSets}
+                setShowTipsFor={setShowTipsFor}
+              />
 
               <AISearchBar
                 searchQuery={searchQuery}
@@ -1207,6 +1240,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                   cardioExtraValue={cardioExtraValue}
                   setCardioExtraValue={setCardioExtraValue}
                   handleAddCardio={handleAddCardio}
+                  readiness={workoutReadiness}
+                  fatigueStatus={fatigueStatus}
                 />
               ) : activeTab === 'sports' ? (
                 <SportsYogaPanel
@@ -1219,6 +1254,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                   setCardioDuration={setCardioDuration}
                   getExerciseOptions={getExerciseOptions}
                   handleSubmit={() => handleAddSportsOrYoga('Sports')}
+                  readiness={workoutReadiness}
+                  fatigueStatus={fatigueStatus}
                 />
               ) : (
                 <SportsYogaPanel
@@ -1231,6 +1268,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                   setCardioDuration={setCardioDuration}
                   getExerciseOptions={getExerciseOptions}
                   handleSubmit={() => handleAddSportsOrYoga('Yoga')}
+                  readiness={workoutReadiness}
+                  fatigueStatus={fatigueStatus}
                 />
               )}
             </div>
@@ -1496,19 +1535,20 @@ function AISearchBar({ searchQuery, setSearchQuery, handleAiSearch, aiSearching,
       <input
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        className="w-full pl-12 pr-28 py-5 bg-white/[0.02] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all placeholder:opacity-40"
+        className="w-full pl-12 pr-40 py-5 bg-white/[0.02] border border-border rounded-2xl text-sm font-bold focus:outline-none focus:border-lime transition-all placeholder:opacity-40"
         placeholder="Search exercise..."
       />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
         <button
           onClick={handleAiSearch}
           disabled={aiSearching || !searchQuery}
-          className={`p-2 rounded-xl border transition-all ${
+          className={`px-3 py-2 rounded-xl border transition-all flex items-center gap-2 ${
             aiSearching ? 'bg-white/5 border-white/10 text-white/20' : 'bg-sky/10 border-sky/20 text-sky hover:bg-sky/20'
           }`}
           title="Search with AI"
         >
-          <Sparkles size={18} className={aiSearching ? 'animate-pulse' : ''} />
+          <Sparkles size={16} className={aiSearching ? 'animate-pulse' : ''} />
+          <span className="hidden sm:inline text-[9px] font-black uppercase tracking-widest">AI Search</span>
         </button>
         <button
           onClick={() => setShowCustomForm(true)}
@@ -1551,9 +1591,12 @@ function WeeklyPlanSection(props: any) {
     startPlanExercise,
     completedPlanExercises,
     togglePlanExerciseComplete,
+    currentSets = [],
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
+  const hasLoggedSetForExercise = (name: string) =>
+    (currentSets || []).some((set: any) => normalizeForMatch(set.exercise || '') === normalizeForMatch(name));
   const yesterdayNames = (yesterdayWorkouts || []).map((w: any) => getWorkoutDisplayName(w)).filter(Boolean);
   const yesterdaySummary = yesterdayNames.length > 1 ? yesterdayNames.join(' + ') : yesterdayNames[0];
 const { setShowTipsFor } = props;
@@ -1569,7 +1612,7 @@ const { setShowTipsFor } = props;
           <div className="label-small text-lime mb-2">Today’s Workout Plan • {todayName}</div>
           <h3 className="text-2xl font-black tracking-tight">{todayPlan?.planName || 'No plan set for today'}</h3>
           <p className="text-[11px] text-white/40 mt-1">
-            Start your plan, tick completed exercises, or edit your weekly split.
+            Begin the weekly plan, log sets, then complete exercises when at least one set is recorded.
           </p>
         </div>
         <div className="flex gap-2">
@@ -1578,7 +1621,7 @@ const { setShowTipsFor } = props;
               onClick={startTodayPlan}
               className="px-5 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 active:scale-95 transition-all"
             >
-              Start Today’s Plan
+              {`Begin ${todayPlan?.planName || 'Workout'}`}
             </button>
           )}
           <button
@@ -1607,13 +1650,17 @@ const { setShowTipsFor } = props;
                 </div>
                 <button
                   onClick={() => togglePlanExerciseComplete(ex.name)}
-                  className={`px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest ${
+                  disabled={!completedPlanExercises[ex.name] && !hasLoggedSetForExercise(ex.name)}
+                  title={!completedPlanExercises[ex.name] && !hasLoggedSetForExercise(ex.name) ? 'Log at least one set first' : 'Mark exercise complete'}
+                  className={`px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
                     completedPlanExercises[ex.name]
                       ? 'bg-lime text-dark border-lime'
-                      : 'bg-white/[0.03] text-white/40 border-border'
+                      : hasLoggedSetForExercise(ex.name)
+                        ? 'bg-white/[0.03] text-lime border-lime/30 hover:bg-lime hover:text-dark'
+                        : 'bg-white/[0.02] text-white/20 border-border cursor-not-allowed'
                   }`}
                 >
-                  {completedPlanExercises[ex.name] ? 'Done' : 'Mark Done'}
+                  {completedPlanExercises[ex.name] ? 'Completed' : 'Complete'}
                 </button>
               </div>
 
@@ -1622,11 +1669,11 @@ const { setShowTipsFor } = props;
               </div>
 
               <div className="grid grid-cols-3 gap-2">
-                <button onClick={() => startPlanExercise(ex)} className="py-2 rounded-xl bg-lime/15 text-lime border border-lime/20 text-[9px] font-black uppercase">
-                  Start
+                <button onClick={() => startPlanExercise(ex)} className="py-2 rounded-xl bg-lime/15 text-lime border border-lime/20 text-[9px] font-black uppercase hover:bg-lime hover:text-dark transition-all">
+                  Log Set
                 </button>
-                <button className="py-2 rounded-xl bg-white/[0.03] text-white/40 border border-border text-[9px] font-black uppercase">
-                  Replace
+                <button onClick={() => setPlanEditorOpen(true)} className="py-2 rounded-xl bg-white/[0.03] text-white/40 border border-border text-[9px] font-black uppercase hover:text-white transition-all">
+                  Edit
                 </button>
                 <button
   onClick={() => setShowTipsFor(ex.name)}
@@ -2160,10 +2207,27 @@ function CardioPanel(props: any) {
     cardioExtraValue,
     setCardioExtraValue,
     handleAddCardio,
+    readiness = 55,
+    fatigueStatus = 'Normal Fatigue',
   } = props;
+
+  const durationNum = Number(cardioDuration || 0);
+  const estimatedCalories = durationNum
+    ? Math.round(durationNum * getCardioCaloriesPerMinute(cardioExercise, fatigueStatus))
+    : 0;
+  const cardioAdvice = getConditioningAdvice(readiness, fatigueStatus, 'Cardio');
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-2 transition-all">
+      <div className="rounded-3xl border border-sky/20 bg-sky/5 p-5">
+        <div className="label-small text-sky mb-2">Cardio Coach</div>
+        <p className="text-sm font-bold text-white">{cardioAdvice}</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-[10px] font-black uppercase tracking-widest text-white/40">
+          <div>Readiness: <span className="text-lime">{readiness}%</span></div>
+          <div>Est. Burn: <span className="text-sky">{estimatedCalories || '—'} kcal</span></div>
+        </div>
+      </div>
+
       <div className="space-y-6">
         <div className="label-small text-muted ml-1">Primary Cardio Options</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -2183,6 +2247,19 @@ function CardioPanel(props: any) {
         </div>
 
         <InputText label="Manual Selection / Search" value={cardioExercise} onChange={(v: string) => setCardioExercise(toExerciseTitle(v))} placeholder="Search cardio..." />
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+          {[15, 30, 45, 60].map((min) => (
+            <button
+              key={min}
+              onClick={() => setCardioDuration(String(min))}
+              className={`shrink-0 px-4 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
+                Number(cardioDuration) === min ? 'bg-lime text-dark border-lime' : 'bg-white/[0.03] border-border text-white/40 hover:text-white'
+              }`}
+            >
+              {min} min
+            </button>
+          ))}
+        </div>
       </div>
 
       <div
@@ -2229,7 +2306,7 @@ function CardioPanel(props: any) {
         className="w-full py-6 bg-lime text-dark font-black rounded-3xl shadow-xl shadow-lime/20 uppercase text-xs tracking-[0.3em] active:scale-95 disabled:opacity-20 disabled:pointer-events-none transition-all flex items-center justify-center gap-3"
       >
         <CheckCircle2 size={18} />
-        Log Cardio
+        {cardioExercise ? `Log ${toExerciseTitle(cardioExercise)}` : 'Log Cardio'}
       </button>
     </div>
   );
@@ -2246,12 +2323,29 @@ function SportsYogaPanel(props: any) {
     setCardioDuration,
     getExerciseOptions,
     handleSubmit,
+    readiness = 55,
+    fatigueStatus = 'Normal Fatigue',
   } = props;
+
+  const durationNum = Number(cardioDuration || 0);
+  const estimatedCalories = durationNum
+    ? Math.round(durationNum * (mode === 'Sports' ? getCardioCaloriesPerMinute(cardioExercise || mode, fatigueStatus) : 4))
+    : 0;
+  const coachAdvice = getConditioningAdvice(readiness, fatigueStatus, mode);
 
   const subs = Object.keys((EXERCISE_DATABASE as any)[mode] || {});
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-2 transition-all">
+      <div className="rounded-3xl border border-lime/20 bg-lime/[0.04] p-5">
+        <div className="label-small text-lime mb-2">{mode} Coach</div>
+        <p className="text-sm font-bold text-white">{coachAdvice}</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-[10px] font-black uppercase tracking-widest text-white/40">
+          <div>Readiness: <span className="text-lime">{readiness}%</span></div>
+          <div>Est. Burn: <span className="text-sky">{estimatedCalories || '—'} kcal</span></div>
+        </div>
+      </div>
+
       <div className="space-y-4">
         <div className="label-small text-muted ml-1">{mode === 'Sports' ? 'Sports Disciplines' : 'Yoga Styles'}</div>
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
@@ -2293,6 +2387,20 @@ function SportsYogaPanel(props: any) {
         </div>
       </div>
 
+      <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+        {(mode === 'Sports' ? [30, 45, 60, 90] : [15, 30, 45, 60]).map((min) => (
+          <button
+            key={min}
+            onClick={() => setCardioDuration(String(min))}
+            className={`shrink-0 px-4 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
+              Number(cardioDuration) === min ? 'bg-lime text-dark border-lime' : 'bg-white/[0.03] border-border text-white/40 hover:text-white'
+            }`}
+          >
+            {min} min
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <InputBlock label="Duration (Min)" value={cardioDuration} onChange={setCardioDuration} placeholder={mode === 'Sports' ? '60' : '45'} />
         <div className="flex items-end">
@@ -2301,7 +2409,7 @@ function SportsYogaPanel(props: any) {
             disabled={!cardioExercise || !cardioDuration}
             className="w-full py-5 bg-lime text-dark font-black rounded-2xl shadow-xl shadow-lime/20 uppercase text-xs tracking-widest active:scale-95 disabled:opacity-20 transition-all"
           >
-            Log {mode}
+            {cardioExercise ? `Log ${toExerciseTitle(cardioExercise)}` : `Log ${mode}`}
           </button>
         </div>
       </div>
