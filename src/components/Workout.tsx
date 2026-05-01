@@ -84,6 +84,26 @@ const WORKOUT_WINDOW_MAP: Record<string, { label: string; estimatedStart: string
   evening: { label: 'Evening', estimatedStart: '18:00' },
 };
 
+function isValidWorkoutTime(value: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || '').trim());
+}
+
+function getWorkoutWindowFromTime(value: string) {
+  if (!isValidWorkoutTime(value)) return '';
+  const hour = Number(value.split(':')[0]);
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'afternoon';
+  return 'evening';
+}
+
+function formatWorkoutTime(value: string | null | undefined) {
+  if (!value || !isValidWorkoutTime(String(value))) return '';
+  const [hh, mm] = String(value).split(':').map(Number);
+  const period = hh >= 12 ? 'PM' : 'AM';
+  const displayHour = hh % 12 || 12;
+  return `${displayHour}:${String(mm).padStart(2, '0')} ${period}`;
+}
+
 const CATEGORY_IMAGES: Record<string, string> = {
   Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
   Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
@@ -462,27 +482,56 @@ export default function WorkoutView({
 
   const workoutsArr = data.workouts?.[viewDate] || [];
   const todaysWorkoutSchedule = (data as any).workoutSchedule?.[viewDate] || {};
-  const selectedWorkoutWindow = todaysWorkoutSchedule.window || performanceEngine?.workout?.window || '';
-  const workoutStartTime = todaysWorkoutSchedule.estimatedStart || todaysWorkoutSchedule.startTime || performanceEngine?.workout?.startTime || null;
-  const setWorkoutWindowForDate = (windowKey: string) => {
-    const selected = WORKOUT_WINDOW_MAP[windowKey];
-    if (!selected) return;
+  const workoutStartTime = todaysWorkoutSchedule.startTime || todaysWorkoutSchedule.estimatedStart || performanceEngine?.workout?.startTime || null;
+  const selectedWorkoutWindow = todaysWorkoutSchedule.window || getWorkoutWindowFromTime(workoutStartTime || '') || performanceEngine?.workout?.window || '';
+
+  const saveWorkoutTimingForDate = (payload: { window?: string; startTime?: string; estimatedStart?: string }) => {
     setData((prev: any) => ({
       ...prev,
       workoutSchedule: {
         ...(prev.workoutSchedule || {}),
         [viewDate]: {
           ...(prev.workoutSchedule?.[viewDate] || {}),
-          window: windowKey,
-          estimatedStart: selected.estimatedStart,
+          ...payload,
           updatedAt: new Date().toISOString(),
         },
       },
     }));
+
     try {
-      localStorage.setItem('stayfit_workout_window_context', JSON.stringify({ date: viewDate, window: windowKey, estimatedStart: selected.estimatedStart }));
+      const nextPayload = {
+        date: viewDate,
+        window: payload.window || selectedWorkoutWindow || getWorkoutWindowFromTime(payload.startTime || workoutStartTime || ''),
+        startTime: payload.startTime || workoutStartTime || payload.estimatedStart || null,
+        estimatedStart: payload.estimatedStart || payload.startTime || workoutStartTime || null,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('stayfit_workout_time_context', JSON.stringify(nextPayload));
+      localStorage.setItem('stayfit_workout_window_context', JSON.stringify(nextPayload));
     } catch {}
-    showWorkoutMessage(`Workout window set: ${selected.label}`);
+  };
+
+  const setWorkoutWindowForDate = (windowKey: string) => {
+    const selected = WORKOUT_WINDOW_MAP[windowKey];
+    if (!selected) return;
+    saveWorkoutTimingForDate({
+      window: windowKey,
+      startTime: selected.estimatedStart,
+      estimatedStart: selected.estimatedStart,
+    });
+    showWorkoutMessage(`Workout time set: ${selected.label} • ${formatWorkoutTime(selected.estimatedStart)}`);
+  };
+
+  const setWorkoutStartTimeForDate = (timeValue: string) => {
+    const cleanTime = String(timeValue || '').trim();
+    if (!isValidWorkoutTime(cleanTime)) return;
+    const derivedWindow = getWorkoutWindowFromTime(cleanTime);
+    saveWorkoutTimingForDate({
+      window: derivedWindow || selectedWorkoutWindow || 'custom',
+      startTime: cleanTime,
+      estimatedStart: cleanTime,
+    });
+    showWorkoutMessage(`Workout time updated: ${formatWorkoutTime(cleanTime)}`);
   };
   const personalExercises = data.personalExercises || [];
   
@@ -1248,6 +1297,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 selectedWorkoutWindow={selectedWorkoutWindow}
                 workoutStartTime={workoutStartTime}
                 setWorkoutWindowForDate={setWorkoutWindowForDate}
+                setWorkoutStartTimeForDate={setWorkoutStartTimeForDate}
                 setShowTipsFor={setShowTipsFor}
               />
               )}
@@ -1699,6 +1749,7 @@ function WeeklyPlanSection(props: any) {
     selectedWorkoutWindow,
     workoutStartTime,
     setWorkoutWindowForDate,
+    setWorkoutStartTimeForDate,
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
@@ -1740,8 +1791,20 @@ const { setShowTipsFor } = props;
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-        <div className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">When will you train today?</div>
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-4 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-white/40">When will you train today?</div>
+            <div className="text-[11px] text-white/35 mt-1">Nutrition will recalculate pre/post-workout meals whenever this time changes.</div>
+          </div>
+          {workoutStartTime && (
+            <div className="shrink-0 rounded-xl border border-lime/20 bg-lime/10 px-3 py-2 text-right">
+              <div className="text-[8px] font-black uppercase tracking-widest text-lime/70">Training Time</div>
+              <div className="text-sm font-black text-lime leading-none mt-1">{formatWorkoutTime(workoutStartTime)}</div>
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-3 gap-2">
           {Object.entries(WORKOUT_WINDOW_MAP).map(([key, item]: any) => (
             <button
@@ -1753,14 +1816,26 @@ const { setShowTipsFor } = props;
                   : 'bg-white/[0.03] text-white/50 border-border hover:text-white'
               }`}
             >
-              {item.label}
+              <span className="block">{item.label}</span>
+              <span className="block text-[9px] opacity-60 mt-1">{formatWorkoutTime(item.estimatedStart)}</span>
             </button>
           ))}
         </div>
-        <div className="text-[11px] text-white/40 mt-3">
+
+        <label className="block rounded-2xl border border-border bg-white/[0.03] p-3">
+          <span className="block text-[9px] font-black uppercase tracking-widest text-white/35 mb-2">Exact workout time</span>
+          <input
+            type="time"
+            value={isValidWorkoutTime(workoutStartTime || '') ? workoutStartTime : ''}
+            onChange={(event) => setWorkoutStartTimeForDate?.(event.target.value)}
+            className="w-full bg-transparent text-white text-lg font-black outline-none [color-scheme:dark]"
+          />
+        </label>
+
+        <div className="rounded-xl border border-sky/15 bg-sky/5 px-3 py-3 text-[11px] text-sky/90 font-bold leading-relaxed">
           {workoutStartTime
-            ? `Nutrition will use approx. ${workoutStartTime} for pre/post-workout guidance.`
-            : 'Select a workout window to unlock pre/post-workout meal guidance.'}
+            ? `Nutrition will use ${formatWorkoutTime(workoutStartTime)} to time pre-workout fuel and post-workout recovery meals.`
+            : 'Select a window or enter an exact time to unlock pre/post-workout meal guidance.'}
         </div>
       </div>
 
