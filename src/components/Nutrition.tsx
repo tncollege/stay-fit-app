@@ -112,14 +112,37 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   const qtyValue = qtyInput.trim() === '' ? 0 : Number(qtyInput) || 0;
   const saveQtyValue = qtyInput.trim() === '' ? 1 : Number(qtyInput) || 1;
 
+  const isSupplementMeal = (meal: any) => {
+    const name = String(meal?.name || '').toLowerCase();
+    const unit = String(meal?.unit || '').toLowerCase();
+
+    return (
+      unit.includes('capsule') ||
+      unit.includes('tablet') ||
+      unit.includes('softgel') ||
+      name.includes('omega') ||
+      name.includes('vitamin') ||
+      name.includes('d3') ||
+      name.includes('k2') ||
+      name.includes('magnesium') ||
+      name.includes('zinc') ||
+      name.includes('multivitamin')
+    );
+  };
+
   const consumed = useMemo(() => {
     return mealsArr.reduce(
-      (acc, meal) => ({
-        calories: acc.calories + Number(meal.calories || 0),
-        protein: acc.protein + Number(meal.protein || 0),
-        carbs: acc.carbs + Number(meal.carbs || 0),
-        fats: acc.fats + Number(meal.fats || 0),
-      }),
+      (acc, meal) => {
+        // Supplements stay visible in the log, but they do not distort the daily food coaching.
+        if (isSupplementMeal(meal)) return acc;
+
+        return {
+          calories: acc.calories + Number(meal.calories || 0),
+          protein: acc.protein + Number(meal.protein || 0),
+          carbs: acc.carbs + Number(meal.carbs || 0),
+          fats: acc.fats + Number(meal.fats || 0),
+        };
+      },
       { calories: 0, protein: 0, carbs: 0, fats: 0 }
     );
   }, [mealsArr]);
@@ -144,14 +167,19 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   const waterGap = Math.max(0, targets.water - waterTotalL);
 
   const nutritionInsight = useMemo(() => {
-    const proteinGap = targets.protein - consumed.protein;
-    const calorieGap = targets.calories - consumed.calories;
+    const proteinGap = Math.max(0, targets.protein - consumed.protein);
+    const calorieGap = Math.max(0, targets.calories - consumed.calories);
+    const realisticProteinTarget = Math.min(50, Math.round(proteinGap));
 
-    if (proteinGap > 50) {
-      return 'Protein is low today. Add around ' + Math.round(proteinGap) + 'g more protein before dinner.';
+    if (proteinGap > 40 && calorieGap > 600) {
+      return 'Protein and calories are low. Add one balanced high-protein meal: ' + realisticProteinTarget + 'g protein and 500–700 kcal.';
     }
 
-    if (calorieGap > 800) {
+    if (proteinGap > 40) {
+      return 'Protein is low today. Aim for a realistic ' + realisticProteinTarget + 'g protein meal next.';
+    }
+
+    if (calorieGap > 600) {
       return 'You are under-eating by around ' + Math.round(calorieGap) + ' kcal. Add a balanced meal.';
     }
 
@@ -164,6 +192,17 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     }
 
     return 'Nutrition is on track today.';
+  }, [consumed, targets]);
+
+  const nutritionStatus = useMemo(() => {
+    const proteinOk = consumed.protein >= targets.protein * 0.75;
+    const caloriesOk = consumed.calories >= targets.calories * 0.55;
+    const carbsHigh = consumed.carbs > targets.carbs * 1.25;
+    const fatsHigh = consumed.fats > targets.fats * 1.25;
+
+    return proteinOk && caloriesOk && !carbsHigh && !fatsHigh
+      ? 'On Track'
+      : 'Needs Attention';
   }, [consumed, targets]);
 
   const mealSuggestion = useMemo(() => {
@@ -433,6 +472,33 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     }
   };
 
+  const addWater = async (amount: number) => {
+    const time = Date.now();
+    const currentTotal = (data.water[viewDate] || []).reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0
+    );
+    const newTotal = currentTotal + amount;
+
+    // Store water as ONE daily total so devices do not merge/double-count values.
+    setData((prev: AppData) => ({
+      ...prev,
+      water: {
+        ...prev.water,
+        [viewDate]: [{ amount: newTotal, time }]
+      }
+    }));
+
+    try {
+      await saveWaterTotal(viewDate, newTotal, time);
+      console.log('Water total saved to Supabase ✅');
+      showNutritionMessage(amount + 'ml water added');
+    } catch (err) {
+      console.error('Water save error ❌', err);
+      showNutritionMessage('Water saved locally. Cloud sync failed.');
+    }
+  };
+
   const handleEditMeal = (meal: Meal) => {
     setSelectedFood(meal);
     setQtyInput(String(Number(meal.qty) || 1));
@@ -472,9 +538,9 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
               {waterArr.length > 0 && (
                 <div className="mt-3 space-y-2">
                   {waterArr.slice(-5).reverse().map((w, idx) => (
-                    <div key={`${w.time}-${idx}`} className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-white/40">
-                      <span>{new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span className="text-sky">+{w.amount}ml</span>
+                    <div key={String(w.time) + '-' + idx} className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-white/40">
+                      <span>{waterArr.length === 1 ? 'Daily total' : new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-sky">{waterArr.length === 1 ? round(Number(w.amount || 0) / 1000) + 'L' : '+' + w.amount + 'ml'}</span>
                     </div>
                   ))}
                 </div>
@@ -595,28 +661,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
               {[250, 500, 750].map(amt => (
                 <button 
                   key={amt}
-                  onClick={async () => {
-                    const time = Date.now();
-                    const currentTotal = (data.water[viewDate] || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-                    const newTotal = currentTotal + amt;
-
-                    // Store water as ONE daily total so devices do not merge/double-count values.
-                    setData((prev: AppData) => ({
-                      ...prev,
-                      water: {
-                        ...prev.water,
-                        [viewDate]: [{ amount: newTotal, time }]
-                      }
-                    }));
-
-                    try {
-                      await saveWaterTotal(viewDate, newTotal, time);
-                      console.log('Water total saved to Supabase ✅');
-                      showNutritionMessage(`${amt}ml water added`);
-                    } catch (err) {
-                      console.error('Water save error ❌', err);
-                    }
-                  }}
+                  onClick={() => addWater(amt)}
                   className="flex-1 py-4 bg-sky/10 border border-sky/20 text-sky rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-sky/20 transition-all"
                 >
                   +{amt}ml
@@ -628,8 +673,13 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
 
         <div className="space-y-6">
           <div className="rounded-2xl border border-lime/20 bg-lime/10 p-5">
-            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime mb-2">
-              Gym-E Nutrition Insight
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime">
+                Gym-E Nutrition Insight
+              </div>
+              <div className={'rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest ' + (nutritionStatus === 'On Track' ? 'bg-lime/20 text-lime border border-lime/20' : 'bg-pink/10 text-pink border border-pink/20')}>
+                {nutritionStatus}
+              </div>
             </div>
             <p className="text-sm font-bold text-white leading-relaxed">
               {nutritionInsight}
@@ -637,6 +687,26 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
             <p className="mt-2 text-[11px] text-white/40 font-bold uppercase tracking-widest">
               {mealSuggestion}
             </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setSelectedMeal(new Date().getHours() < 17 ? 'Lunch' : 'Dinner');
+                  setSelectedMain('Chicken');
+                  setSelectedSub(null);
+                  setSearchQuery('chicken');
+                  showNutritionMessage('Showing high-protein options');
+                }}
+                className="rounded-xl bg-lime text-dark px-3 py-3 text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all"
+              >
+                Find Protein Meal
+              </button>
+              <button
+                onClick={() => addWater(500)}
+                className="rounded-xl bg-sky/10 border border-sky/20 text-sky px-3 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-sky/20 active:scale-95 transition-all"
+              >
+                +500ml Water
+              </button>
+            </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-[10px] font-black uppercase tracking-widest">
               <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-white/50">
                 Protein left
