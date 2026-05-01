@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Auth from './components/Auth';
 import { getSession, signOut } from './services/authService';
 import { supabase } from './services/supabaseClient';
@@ -132,13 +132,15 @@ export default function App() {
 
     
         const localHasData = hasMeaningfulLocalData(localSnapshot);
-        const alreadySynced = localStorage.getItem('stayfitinlife_cloud_synced') === 'v3';
+        const alreadySynced =
+          localStorage.getItem('stayfitinlife_cloud_synced') === 'v3';
 
         // First desktop/device migration:
         // One-time desktop/device migration. We sync when this browser has local data
         // and has not completed the current cloud sync version yet. Upserts prevent duplicates.
         if (localHasData && !alreadySynced) {
           await syncLocalDataToCloud(localSnapshot);
+          localStorage.setItem('stayfitinlife_cloud_synced', 'v3');
           console.log('Existing local data uploaded to Supabase ✅');
           cloud = await loadCloudData();
         }
@@ -205,11 +207,11 @@ export default function App() {
             : prev.profile,
           introSeen: cloud.profile && Object.keys(cloud.profile).length > 0 ? true : prev.introSeen,
           // For synced tables, cloud is the source of truth. This lets deletes on desktop disappear on mobile.
-          meals: (cloud.meals as any) || {},
-          workouts: (cloud.workouts as any) || {},
-          weights: (cloud.weights as any) || [],
-          steps: (cloud.steps as any) || {},
-          water: (cloud.water as any) || {},
+          meals: Object.keys(cloud.meals || {}).length ? cloud.meals : prev.meals,
+          workouts: Object.keys(cloud.workouts || {}).length ? cloud.workouts : prev.workouts,
+          weights: cloud.weights?.length ? cloud.weights : prev.weights,
+          steps: Object.keys(cloud.steps || {}).length ? cloud.steps : prev.steps,
+          water: Object.keys(cloud.water || {}).length ? cloud.water : prev.water,
           lastSyncDate: cloud.lastSyncDate || prev.lastSyncDate,
         }));
       } catch (err) {
@@ -225,7 +227,9 @@ export default function App() {
 
     window.addEventListener('focus', refreshCloudData);
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    const intervalId = window.setInterval(refreshCloudData, 15000);
+
+    // Optional safety refresh (once per minute)
+    const intervalId = window.setInterval(refreshCloudData, 60000);
 
     return () => {
       cancelled = true;
@@ -448,13 +452,16 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
   const workoutArr = data.workouts[today] || [];
   const stepsToday = data.steps?.[today] || 0;
   const stepGoal = data.profile.stepGoal || 10000;
-  const stepProgress = Math.min(100, Math.round((stepsToday / stepGoal) * 100));
+  const stepProgress = stepGoal
+    ? Math.min(100, Math.round((stepsToday / stepGoal) * 100))
+    : 0;
 
   const [aiInsight, setAiInsight] = useState('');
   const [insightLoading, setInsightLoading] = useState(false);
+  const lastInsightRef = useRef(0);
 
   const targets = useMemo(() => {
-    const w = profile.currentWeight || 70;
+    const w = profile.currentWeight ?? 70;
     let baseCalories = w * 30;
     if (profile.goal === 'Fat Loss') baseCalories -= 500;
     if (profile.goal === 'Muscle Gain') baseCalories += 300;
@@ -483,12 +490,8 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
   const burned = useMemo(() => {
     return workoutArr.reduce((acc, w) => acc + (w.caloriesBurned || 0), 0);
   }, [workoutArr]);
-  
-  const waterTotal = waterArr.reduce((acc, w) => acc + w.amount, 0) / 1000;
 
-  const hydrationScore = targets.water
-  ? Math.min(100, (waterTotal / targets.water) * 100)
-  : 0;
+  const waterTotal = waterArr.reduce((acc, w) => acc + w.amount, 0) / 1000;
 
   const weeklyLoad = useMemo(() => {
     const todayDate = new Date();
@@ -497,15 +500,12 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
     for (let i = 0; i < 7; i++) {
       const d = new Date(todayDate);
       d.setDate(d.getDate() - i);
-
-      const key = d.toISOString().split("T")[0];
+      const key = d.toISOString().split('T')[0];
       const workouts = data.workouts?.[key] || [];
-
       const dayLoad = workouts.reduce(
         (sum: number, w: any) => sum + (w.caloriesBurned || 0),
         0
       );
-
       const decay = 1 - i * 0.12;
       total += dayLoad * decay;
     }
@@ -515,45 +515,63 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
 
   const fatigueStatus =
     weeklyLoad > 3000
-      ? "High Fatigue"
+      ? 'High Fatigue'
       : weeklyLoad > 1800
-      ? "Moderate Fatigue"
-      : "Normal Fatigue";
+      ? 'Moderate Fatigue'
+      : 'Normal Fatigue';
+
+  const hydrationScore = targets.water
+    ? Math.min(100, (waterTotal / targets.water) * 100)
+    : 0;
 
   const recoveryData = useMemo(() => {
-    const sleepScore = data.recovery?.[today]?.sleep || 75;
+    const hasSleep = data.recovery?.[today]?.sleep;
+    const sleepScore = hasSleep ? hasSleep : 75;
 
     const workoutLoad = workoutArr.reduce(
       (sum, w) => sum + (w.caloriesBurned || 0),
       0
     );
 
+    const hasWorkout = workoutArr.length > 0;
+    const hasSteps = stepsToday > 0;
+    const hasMeals = mealsArr.length > 0;
+    const hasWater = waterArr.length > 0;
+
     const expectedLoad = Math.max(300, targets.calories * 0.4);
 
-    const strainScore = Math.min(
-      100,
-      (workoutLoad / expectedLoad) * 70 +
-        (stepsToday / stepGoal) * 30
-    );
+    const strainScore =
+      hasWorkout || hasSteps
+        ? Math.min(
+            100,
+            (workoutLoad / expectedLoad) * 70 +
+              (stepGoal ? (stepsToday / stepGoal) * 30 : 0)
+          )
+        : 55;
 
-    const nutritionScore = Math.min(
-      100,
-      Math.min(1, consumed.protein / targets.protein) * 100
-    );
+    const nutritionScore = hasMeals && targets.protein
+      ? Math.min(100, Math.min(1, consumed.protein / targets.protein) * 100)
+      : 55;
+
+    const hydrationSafeScore = hasWater ? hydrationScore : 60;
 
     const score =
       sleepScore * 0.3 +
       strainScore * 0.25 +
       nutritionScore * 0.25 +
-      hydrationScore * 0.2;
+      hydrationSafeScore * 0.2;
 
-    let status = "Low";
-    if (score > 75) status = "High";
-    else if (score > 55) status = "Moderate";
+    let status = 'Low';
+    if (score > 75) status = 'High';
+    else if (score > 55) status = 'Moderate';
 
     return {
       score: Math.round(score),
       status,
+      hasWorkout,
+      hasSteps,
+      hasMeals,
+      hasWater,
     };
   }, [
     data.recovery,
@@ -565,73 +583,77 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
     hydrationScore,
     targets.protein,
     targets.calories,
+    mealsArr.length,
+    waterArr.length,
   ]);
 
   const performanceScore = useMemo(() => {
     const expectedBurn = Math.max(250, targets.calories * 0.3);
+    const hasWorkout = workoutArr.length > 0;
+    const hasSteps = stepsToday > 0;
 
-    const workoutScore = Math.min(
-      100,
-      (burned / expectedBurn) * 100
-    );
+    if (!hasWorkout && !hasSteps) return 55;
 
-    const stepScore = Math.min(100, (stepsToday / stepGoal) * 100);
+    const workoutScore = hasWorkout
+      ? Math.min(100, (burned / expectedBurn) * 100)
+      : 55;
+
+    const stepScore = hasSteps
+      ? Math.min(100, stepGoal ? (stepsToday / stepGoal) * 100 : 0)
+      : 55;
 
     return Math.round(workoutScore * 0.6 + stepScore * 0.4);
-  }, [burned, stepsToday, stepGoal, targets.calories]);
+  }, [burned, stepsToday, stepGoal, targets.calories, workoutArr.length]);
 
   const aiControl = useMemo(() => {
     const recovery = recoveryData.score;
-    const highFatigue = fatigueStatus === "High Fatigue";
+    const highFatigue = fatigueStatus === 'High Fatigue';
 
     if (recovery < 50 || highFatigue || performanceScore < 35) {
       return {
-        intensity: "Low",
-        workoutAction: "Avoid heavy training today",
-        calorieAction: "Keep protein high, avoid aggressive deficit",
-        recoveryAction: "Mobility, walking, hydration and sleep",
-        buttonText: "Start Recovery Session",
-        workoutType: "Recovery + Mobility",
+        intensity: 'Low',
+        workoutAction: 'Avoid heavy training today',
+        calorieAction: 'Keep protein high, avoid aggressive deficit',
+        recoveryAction: 'Mobility, walking, hydration and sleep',
+        buttonText: 'Start Recovery Session',
+        workoutType: 'Recovery + Mobility',
         calorieAdjustment: -100,
       };
     }
 
-    if (recovery > 80 && fatigueStatus === "Normal Fatigue" && performanceScore > 60) {
+    if (recovery > 80 && fatigueStatus === 'Normal Fatigue' && performanceScore > 60) {
       return {
-        intensity: "High",
-        workoutAction: "Push progressive overload today",
-        calorieAction: "Add performance fuel around training",
-        recoveryAction: "Normal recovery protocol",
-        buttonText: "Start Performance Session",
-        workoutType: "Heavy Strength",
+        intensity: 'High',
+        workoutAction: 'Push progressive overload today',
+        calorieAction: 'Add performance fuel around training',
+        recoveryAction: 'Normal recovery protocol',
+        buttonText: 'Start Performance Session',
+        workoutType: 'Heavy Strength',
         calorieAdjustment: 200,
       };
     }
 
     return {
-      intensity: "Moderate",
-      workoutAction: "Train with controlled volume",
-      calorieAction: "Keep calories stable",
-      recoveryAction: "Prioritize hydration and form",
-      buttonText: "Start Controlled Session",
-      workoutType: "Controlled Hypertrophy",
+      intensity: 'Moderate',
+      workoutAction: 'Train with controlled volume',
+      calorieAction: 'Keep calories stable',
+      recoveryAction: 'Prioritize hydration and form',
+      buttonText: 'Start Controlled Session',
+      workoutType: 'Controlled Hypertrophy',
       calorieAdjustment: 0,
     };
   }, [recoveryData.score, fatigueStatus, performanceScore]);
 
   const dynamicTargets = useMemo(() => {
-    const totalCal =
-      targets.calories + burned + (aiControl.calorieAdjustment || 0);
-
+    const totalCal = targets.calories + burned + (aiControl.calorieAdjustment || 0);
     const protein = targets.protein;
     const remainingCals = Math.max(0, totalCal - protein * 4);
     const carbs = Math.round((remainingCals * 0.6) / 4);
     const fats = Math.round((remainingCals * 0.4) / 9);
-
     const water =
       targets.water +
       (burned / 500) * 0.5 +
-      (aiControl.intensity === "High" ? 0.5 : 0);
+      (aiControl.intensity === 'High' ? 0.5 : 0);
 
     return {
       calories: totalCal,
@@ -644,10 +666,10 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
 
   const performanceStatus =
     performanceScore > 75
-      ? "High Output"
+      ? 'High Output'
       : performanceScore > 45
-      ? "Moderate Output"
-      : "Low Output";
+      ? 'Moderate Output'
+      : 'Low Output';
 
   const netCalories = consumed.calories - burned;
   const remaining = dynamicTargets.calories - netCalories;
@@ -659,37 +681,56 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
   const stepsRemaining = Math.max(0, stepGoal - stepsToday);
 
   const fetchInsight = async () => {
-  setInsightLoading(true);
+    if (insightLoading) return;
 
-  try {
-    const insight = await generateDailyInsight({
-      profile,
-      consumed,
-      targets: dynamicTargets,
-      workouts: workoutArr,
-      waterTotal,
-      recovery: recoveryData,
-      fatigueStatus,
-      performanceScore,
-      performanceStatus,
-      aiControl,
-    });
+    setInsightLoading(true);
 
-    setAiInsight(insight);
-  } catch (err) {
-    console.error("AI insight error ❌", err);
-    setAiInsight("Gym-E could not generate insight right now. Your dashboard data is still safe.");
-  } finally {
-    setInsightLoading(false);
-  }
-};
+    try {
+      const insight = await generateDailyInsight({
+        profile,
+        consumed,
+        targets: dynamicTargets,
+        workouts: workoutArr,
+        waterTotal,
+        recovery: recoveryData,
+        fatigueStatus,
+        performanceScore,
+        performanceStatus,
+        aiControl,
+      });
+
+      setAiInsight(insight);
+    } catch (err) {
+      console.error('AI insight error ❌', err);
+      setAiInsight('Gym-E could not generate insight right now. Your dashboard data is still safe.');
+    } finally {
+      setInsightLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      fetchInsight();
+    let active = true;
+
+    const timer = setTimeout(async () => {
+      const now = Date.now();
+
+      if (now - lastInsightRef.current < 30000) return;
+
+      lastInsightRef.current = now;
+
+      if (!active) return;
+
+      try {
+        await fetchInsight();
+      } catch (err) {
+        console.error('Insight fetch error ❌', err);
+      }
     }, 800);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [
     recoveryData.score,
     consumed.calories,
@@ -738,25 +779,34 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
             icon="💧"
             title="Hydration"
             value={`${waterRemaining.toFixed(1)}L left today`}
-            button="+500ml"
-            onClick={async () => {
-              const currentMl = Math.round(waterTotal * 1000);
-              const nextTotalMl = currentMl + 500;
-              setData((prev: AppData) => ({
-                ...prev,
-                water: {
-                  ...prev.water,
-                  [today]: [...(prev.water[today] || []), { amount: 500, time: Date.now() }],
-                },
-              }));
+           button="+500ml"
+           onClick={async () => {
+           const amt = 500;
+           const now = Date.now();
 
-              try {
-                await saveWaterTotal(today, nextTotalMl, Date.now());
-              } catch (err) {
-                console.error("Dashboard water save error ❌", err);
-              }
-            }}
-          />
+           const currentMl = Math.round(waterTotal * 1000);
+           const nextTotalMl = currentMl + amt;
+
+    setData((prev: AppData) => ({
+      ...prev,
+      water: {
+        ...prev.water,
+        [today]: [
+          ...(prev.water[today] || []),
+          { amount: amt, time: now },
+        ],
+      },
+    }));
+
+    try {
+      await saveWaterTotal(today, nextTotalMl, now);
+      showAppMessage("500ml water added");
+    } catch (err) {
+      console.error("Dashboard water save error ❌", err);
+      showAppMessage("Water saved locally. Cloud sync failed.");
+    }
+  }}
+/>
 
           <ActionItem
             icon="🚶"
@@ -914,8 +964,10 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
                 <div className="label-small opacity-30 mt-1">Goal</div>
               </div>
               <div className="text-center">
-                <div className="text-xl font-bold text-pink">-{Math.round(consumed.calories).toLocaleString()}</div>
-                <div className="label-small opacity-30 mt-1">Food</div>
+                <div className="text-xl font-bold text-pink">
+             {Math.round(consumed.calories).toLocaleString()}
+            </div>
+              <div className="label-small opacity-30 mt-1">Consumed</div>
               </div>
               <div className="text-center">
                 <div className="text-xl font-bold text-sky">+{Math.round(burned).toLocaleString()}</div>
@@ -1018,31 +1070,38 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
 
             <div className="grid grid-cols-3 gap-2 mt-5">
               {[250, 500, 750].map((amt) => (
-                <button
-                  key={amt}
-                  onClick={async () => {
-                    const currentMl = Math.round(waterTotal * 1000);
-                    const nextTotalMl = currentMl + amt;
+  <button
+    key={amt}
+    onClick={async () => {
+      const now = Date.now();
 
-                    setData((prev: AppData) => ({
-                      ...prev,
-                      water: {
-                        ...prev.water,
-                        [today]: [...(prev.water[today] || []), { amount: amt, time: Date.now() }],
-                      },
-                    }));
+      const currentMl = Math.round(waterTotal * 1000);
+      const nextTotalMl = currentMl + amt;
 
-                    try {
-                      await saveWaterTotal(today, nextTotalMl, Date.now());
-                    } catch (err) {
-                      console.error("Dashboard water save error ❌", err);
-                    }
-                  }}
-                  className="py-3 rounded-xl bg-sky/10 border border-sky/20 text-sky text-[10px] font-black uppercase tracking-widest hover:bg-sky/20 transition-all"
-                >
-                  +{amt}ml
-                </button>
-              ))}
+      setData((prev: AppData) => ({
+        ...prev,
+        water: {
+          ...prev.water,
+          [today]: [
+            ...(prev.water[today] || []),
+            { amount: amt, time: now },
+          ],
+        },
+      }));
+
+      try {
+        await saveWaterTotal(today, nextTotalMl, now);
+        showAppMessage(`${amt}ml water added`);
+      } catch (err) {
+        console.error("Dashboard water save error ❌", err);
+        showAppMessage("Water saved locally. Cloud sync failed.");
+      }
+    }}
+    className="py-3 rounded-xl bg-sky/10 border border-sky/20 text-sky text-[10px] font-black uppercase tracking-widest hover:bg-sky/20 transition-all"
+  >
+    +{amt}ml
+  </button>
+))}
             </div>
           </div>
 
