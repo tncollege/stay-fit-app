@@ -73,6 +73,74 @@ function scaleMicronutrients(micros: Record<string, number>, qty: number) {
 }
 
 
+const MEAL_UNIT_OPTIONS = ['g', 'ml', 'kg', 'L', 'piece', 'bowl', 'cup', 'scoop', 'tbsp', 'tsp', 'slice', 'glass', 'serving', 'meal'];
+
+type MacroRef = { calories: number; protein: number; carbs: number; fats: number; qty: number; unit: string; source?: string; };
+
+const COMMON_INGREDIENT_MACROS: Array<{ keys: string[]; ref: MacroRef }> = [
+  { keys: ['chicken breast', 'grilled chicken', 'chicken tikka', 'peri peri chicken', 'chicken'], ref: { qty: 100, unit: 'g', calories: 165, protein: 31, carbs: 0, fats: 3.6, source: 'Smart per 100g estimate' } },
+  { keys: ['paneer'], ref: { qty: 100, unit: 'g', calories: 265, protein: 18, carbs: 3, fats: 21, source: 'Smart per 100g estimate' } },
+  { keys: ['tofu'], ref: { qty: 100, unit: 'g', calories: 76, protein: 8, carbs: 2, fats: 4.8, source: 'Smart per 100g estimate' } },
+  { keys: ['rice', 'cooked rice'], ref: { qty: 100, unit: 'g', calories: 130, protein: 2.7, carbs: 28, fats: 0.3, source: 'Smart per 100g estimate' } },
+  { keys: ['dal', 'lentil'], ref: { qty: 100, unit: 'g', calories: 116, protein: 9, carbs: 20, fats: 0.4, source: 'Smart per 100g estimate' } },
+  { keys: ['roti', 'chapati'], ref: { qty: 1, unit: 'piece', calories: 120, protein: 4, carbs: 22, fats: 3, source: 'Smart per piece estimate' } },
+  { keys: ['egg white'], ref: { qty: 1, unit: 'piece', calories: 17, protein: 3.6, carbs: 0.2, fats: 0.1, source: 'Smart per piece estimate' } },
+  { keys: ['egg', 'whole egg'], ref: { qty: 1, unit: 'piece', calories: 70, protein: 6, carbs: 0.6, fats: 5, source: 'Smart per piece estimate' } },
+  { keys: ['whey'], ref: { qty: 1, unit: 'scoop', calories: 120, protein: 24, carbs: 3, fats: 1.5, source: 'Smart per scoop estimate' } },
+  { keys: ['banana'], ref: { qty: 1, unit: 'piece', calories: 105, protein: 1.3, carbs: 27, fats: 0.3, source: 'Smart per piece estimate' } },
+  { keys: ['apple'], ref: { qty: 1, unit: 'piece', calories: 52, protein: 0.3, carbs: 14, fats: 0.2, source: 'Smart per piece estimate' } },
+  { keys: ['curd', 'yogurt', 'yoghurt'], ref: { qty: 100, unit: 'g', calories: 60, protein: 3.5, carbs: 4.7, fats: 3.3, source: 'Smart per 100g estimate' } },
+  { keys: ['olive oil'], ref: { qty: 10, unit: 'ml', calories: 90, protein: 0, carbs: 0, fats: 10, source: 'Smart per 10ml estimate' } },
+  { keys: ['butter'], ref: { qty: 10, unit: 'g', calories: 72, protein: 0, carbs: 0, fats: 8, source: 'Smart per 10g estimate' } },
+  { keys: ['cheese'], ref: { qty: 30, unit: 'g', calories: 120, protein: 7, carbs: 1, fats: 10, source: 'Smart per 30g estimate' } },
+  { keys: ['lettuce'], ref: { qty: 100, unit: 'g', calories: 15, protein: 1.4, carbs: 2.9, fats: 0.2, source: 'Smart per 100g estimate' } },
+  { keys: ['cucumber'], ref: { qty: 100, unit: 'g', calories: 16, protein: 0.7, carbs: 3.6, fats: 0.1, source: 'Smart per 100g estimate' } },
+  { keys: ['tomato'], ref: { qty: 100, unit: 'g', calories: 18, protein: 0.9, carbs: 3.9, fats: 0.2, source: 'Smart per 100g estimate' } },
+  { keys: ['mixed seeds', 'seeds'], ref: { qty: 15, unit: 'g', calories: 85, protein: 3, carbs: 3, fats: 7, source: 'Smart per 15g estimate' } },
+  { keys: ['pasta'], ref: { qty: 100, unit: 'g', calories: 157, protein: 5.8, carbs: 31, fats: 0.9, source: 'Smart cooked per 100g estimate' } },
+  { keys: ['pita'], ref: { qty: 1, unit: 'piece', calories: 170, protein: 6, carbs: 34, fats: 2, source: 'Smart per piece estimate' } },
+  { keys: ['tortilla', 'wrap'], ref: { qty: 1, unit: 'piece', calories: 180, protein: 5, carbs: 32, fats: 4, source: 'Smart per piece estimate' } },
+];
+
+const unitToBaseMultiplier = (qty: number, unit: string, ref: MacroRef) => {
+  const from = String(unit || '').toLowerCase();
+  const base = String(ref.unit || '').toLowerCase();
+  const q = Number(qty || 0);
+  const refQty = Number(ref.qty || 1);
+  if (!q || !refQty) return 0;
+  if (from === base) return q / refQty;
+  if (from === 'kg' && base === 'g') return (q * 1000) / refQty;
+  if (from === 'g' && base === 'kg') return q / 1000 / refQty;
+  if (from === 'l' && base === 'ml') return (q * 1000) / refQty;
+  if (from === 'ml' && base === 'l') return q / 1000 / refQty;
+  if (base === 'g') {
+    if (from === 'cup') return (q * 150) / refQty;
+    if (from === 'tbsp') return (q * 15) / refQty;
+    if (from === 'tsp') return (q * 5) / refQty;
+    if (from === 'bowl') return (q * 180) / refQty;
+    if (from === 'serving') return q;
+  }
+  if (base === 'ml') {
+    if (from === 'cup') return (q * 240) / refQty;
+    if (from === 'tbsp') return (q * 15) / refQty;
+    if (from === 'tsp') return (q * 5) / refQty;
+    if (from === 'glass') return (q * 250) / refQty;
+  }
+  return q / refQty;
+};
+
+const scaleMacrosFromRef = (qty: number, unit: string, ref?: MacroRef | null) => {
+  if (!ref) return null;
+  const factor = unitToBaseMultiplier(qty, unit, ref);
+  return {
+    calories: Math.max(0, Math.round(ref.calories * factor)),
+    protein: Math.max(0, round(ref.protein * factor)),
+    carbs: Math.max(0, round(ref.carbs * factor)),
+    fats: Math.max(0, round(ref.fats * factor)),
+  };
+};
+
+
 export default function Nutrition({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
   const [selectedMeal, setSelectedMeal] = useState('Breakfast');
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,7 +168,9 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   const [aiMealPrompt, setAiMealPrompt] = useState('');
   const [aiBuildingMeal, setAiBuildingMeal] = useState(false);
   const [mealBuilderComponents, setMealBuilderComponents] = useState<any[]>([]);
-  const [manualIngredient, setManualIngredient] = useState({ name: '', qty: 1, unit: 'serving', calories: 0, protein: 0, carbs: 0, fats: 0 });
+  const [manualIngredient, setManualIngredient] = useState({ name: '', qty: '', unit: 'g', calories: '', protein: '', carbs: '', fats: '' });
+  const [manualMacroRef, setManualMacroRef] = useState<MacroRef | null>(null);
+  const [manualLookupLoading, setManualLookupLoading] = useState(false);
   const [weatherTemp, setWeatherTemp] = useState<number | null>(null);
   const [weatherAvailable, setWeatherAvailable] = useState(false);
 
@@ -454,21 +524,140 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   };
 
 
-  const normalizeMealBuilderComponent = (item: any) => ({
-    id: item.id || crypto.randomUUID(),
-    name: item.name || 'Ingredient',
-    qty: Number(item.qty || 1),
-    unit: item.unit || item.portion || 'serving',
-    calories: Math.max(0, Math.round(Number(item.calories || 0))),
-    protein: Math.max(0, round(Number(item.protein || 0))),
-    carbs: Math.max(0, round(Number(item.carbs || 0))),
-    fats: Math.max(0, round(Number(item.fats ?? item.fat ?? 0))),
-  });
+  const normalizeMealBuilderComponent = (item: any) => {
+    const normalized = {
+      id: item.id || crypto.randomUUID(),
+      name: item.name || 'Ingredient',
+      qty: Number(item.qty || 1),
+      unit: item.unit || item.portion || 'serving',
+      calories: Math.max(0, Math.round(Number(item.calories || 0))),
+      protein: Math.max(0, round(Number(item.protein || 0))),
+      carbs: Math.max(0, round(Number(item.carbs || 0))),
+      fats: Math.max(0, round(Number(item.fats ?? item.fat ?? 0))),
+      macroRef: item.macroRef || null,
+    };
+    return {
+      ...normalized,
+      macroRef: normalized.macroRef || {
+        calories: normalized.calories,
+        protein: normalized.protein,
+        carbs: normalized.carbs,
+        fats: normalized.fats,
+        qty: normalized.qty || 1,
+        unit: normalized.unit || 'serving',
+        source: item.source || 'Added estimate',
+      },
+    };
+  };
+
+  const findLocalIngredientMacroRef = (name: string): MacroRef | null => {
+    const text = String(name || '').toLowerCase().trim();
+    if (!text) return null;
+    const dbMatch = combinedFoodList.find(food => {
+      const foodName = String(food.name || '').toLowerCase();
+      return foodName === text || foodName.includes(text) || text.includes(foodName);
+    });
+    if (dbMatch) {
+      return {
+        calories: Number(dbMatch.calories || 0),
+        protein: Number(dbMatch.protein || 0),
+        carbs: Number(dbMatch.carbs || 0),
+        fats: Number(dbMatch.fats ?? dbMatch.fat ?? 0),
+        qty: Number(dbMatch.qty || 1),
+        unit: dbMatch.unit || dbMatch.portion || 'serving',
+        source: 'Food database match',
+      };
+    }
+    const smartMatch = COMMON_INGREDIENT_MACROS.find(item => item.keys.some(key => text.includes(key)));
+    return smartMatch ? smartMatch.ref : null;
+  };
+
+  const applyManualMacroRef = (ref: MacroRef | null, nextQty = manualIngredient.qty, nextUnit = manualIngredient.unit) => {
+    if (!ref) return;
+    const scaled = scaleMacrosFromRef(Number(nextQty || 0), nextUnit || ref.unit, ref);
+    if (!scaled) return;
+    setManualMacroRef(ref);
+    setManualIngredient(prev => ({
+      ...prev,
+      unit: prev.unit || ref.unit || 'g',
+      calories: String(scaled.calories),
+      protein: String(scaled.protein),
+      carbs: String(scaled.carbs),
+      fats: String(scaled.fats),
+    }));
+  };
+
+  const lookupManualIngredientNutrition = async () => {
+    if (!manualIngredient.name.trim()) return;
+    setManualLookupLoading(true);
+    try {
+      const localRef = findLocalIngredientMacroRef(manualIngredient.name);
+      if (localRef) {
+        applyManualMacroRef(localRef);
+        showNutritionMessage('Nutrition auto-filled from database');
+        return;
+      }
+      const aiFood = await searchFoodNutrition(`${manualIngredient.name} ${manualIngredient.qty || 1} ${manualIngredient.unit || 'g'}`);
+      if (!aiFood) {
+        showNutritionMessage('No nutrition match found. Enter macros manually.');
+        return;
+      }
+      const ref: MacroRef = {
+        calories: Number(aiFood.calories || 0),
+        protein: Number(aiFood.protein || 0),
+        carbs: Number(aiFood.carbs || 0),
+        fats: Number(aiFood.fats ?? aiFood.fat ?? 0),
+        qty: Number(manualIngredient.qty || 1),
+        unit: manualIngredient.unit || aiFood.unit || aiFood.portion || 'serving',
+        source: 'Gym-E AI lookup',
+      };
+      setManualMacroRef(ref);
+      setManualIngredient(prev => ({
+        ...prev,
+        name: aiFood.name || prev.name,
+        calories: String(Math.round(ref.calories)),
+        protein: String(round(ref.protein)),
+        carbs: String(round(ref.carbs)),
+        fats: String(round(ref.fats)),
+      }));
+      showNutritionMessage('Gym-E AI nutrition filled');
+    } catch (err) {
+      console.error('Manual ingredient lookup error ❌', err);
+      showNutritionMessage('AI lookup failed. Enter macros manually.');
+    } finally {
+      setManualLookupLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showMealBuilder || !manualIngredient.name.trim()) return;
+    const t = window.setTimeout(() => {
+      const localRef = findLocalIngredientMacroRef(manualIngredient.name);
+      if (localRef) applyManualMacroRef(localRef);
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [manualIngredient.name, showMealBuilder]);
+
+  useEffect(() => {
+    if (!manualMacroRef) return;
+    const scaled = scaleMacrosFromRef(Number(manualIngredient.qty || 0), manualIngredient.unit, manualMacroRef);
+    if (!scaled) return;
+    setManualIngredient(prev => ({ ...prev, calories: String(scaled.calories), protein: String(scaled.protein), carbs: String(scaled.carbs), fats: String(scaled.fats) }));
+  }, [manualIngredient.qty, manualIngredient.unit, manualMacroRef]);
 
   const addManualIngredientToMeal = () => {
     if (!manualIngredient.name.trim()) return;
-    setMealBuilderComponents(prev => [...prev, normalizeMealBuilderComponent(manualIngredient)]);
-    setManualIngredient({ name: '', qty: 1, unit: 'serving', calories: 0, protein: 0, carbs: 0, fats: 0 });
+    setMealBuilderComponents(prev => [...prev, normalizeMealBuilderComponent({
+      ...manualIngredient,
+      qty: Number(manualIngredient.qty || 1),
+      calories: Number(manualIngredient.calories || 0),
+      protein: Number(manualIngredient.protein || 0),
+      carbs: Number(manualIngredient.carbs || 0),
+      fats: Number(manualIngredient.fats || 0),
+      macroRef: manualMacroRef,
+    })]);
+    setManualIngredient({ name: '', qty: '', unit: 'g', calories: '', protein: '', carbs: '', fats: '' });
+    setManualMacroRef(null);
     showNutritionMessage('Ingredient added');
   };
 
@@ -476,7 +665,12 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     setMealBuilderComponents(prev => prev.map(item => {
       if (item.id !== id) return item;
       const numericKeys = ['qty', 'calories', 'protein', 'carbs', 'fats'];
-      return { ...item, [key]: numericKeys.includes(key) ? Number(value) : value };
+      const updated = { ...item, [key]: numericKeys.includes(key) ? Number(value) : value };
+      if ((key === 'qty' || key === 'unit') && updated.macroRef) {
+        const scaled = scaleMacrosFromRef(Number(updated.qty || 0), updated.unit, updated.macroRef);
+        if (scaled) return { ...updated, ...scaled };
+      }
+      return updated;
     }));
   };
 
@@ -1217,47 +1411,68 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                     </button>
                   </div>
 
-                  <div className="rounded-3xl border border-pink/20 bg-pink/5 p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <PlusCircle size={16} className="text-pink" />
-                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-pink">Manual Ingredient</div>
+                  <div className="rounded-3xl border border-pink/20 bg-pink/5 p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <PlusCircle size={16} className="text-pink" />
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-[0.25em] text-pink">Manual Ingredient</div>
+                          <div className="text-[10px] font-bold text-white/35 mt-1">Auto macro fill updates when quantity/unit changes.</div>
+                        </div>
+                      </div>
+                      {manualMacroRef?.source && (
+                        <div className="hidden sm:block rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-white/35">
+                          {manualMacroRef.source}
+                        </div>
+                      )}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
-                      <input
-                        value={manualIngredient.name}
-                        onChange={e => setManualIngredient({ ...manualIngredient, name: e.target.value })}
-                        placeholder="Ingredient"
-                        className="sm:col-span-2 rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-bold outline-none focus:border-pink/50"
-                      />
+
+                    <input
+                      value={manualIngredient.name}
+                      onChange={e => {
+                        setManualIngredient({ ...manualIngredient, name: e.target.value });
+                        setManualMacroRef(null);
+                      }}
+                      placeholder="Ingredient name e.g. Peri Peri Chicken, Dal, Rice, Olive Oil"
+                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-5 py-4 text-base font-bold outline-none focus:border-pink/50"
+                    />
+
+                    <div className="grid grid-cols-2 gap-3">
                       <input
                         type="number"
+                        inputMode="decimal"
                         value={manualIngredient.qty}
-                        onChange={e => setManualIngredient({ ...manualIngredient, qty: Number(e.target.value) })}
-                        placeholder="Qty"
-                        className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-black outline-none focus:border-pink/50"
+                        onChange={e => setManualIngredient({ ...manualIngredient, qty: e.target.value })}
+                        placeholder="Quantity"
+                        className="w-full rounded-2xl bg-black/30 border border-white/10 px-5 py-4 text-base font-black outline-none focus:border-pink/50"
                       />
-                      <input
+                      <select
                         value={manualIngredient.unit}
                         onChange={e => setManualIngredient({ ...manualIngredient, unit: e.target.value })}
-                        placeholder="Unit"
-                        className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-bold outline-none focus:border-pink/50"
-                      />
-                      <input
-                        type="number"
-                        value={manualIngredient.calories}
-                        onChange={e => setManualIngredient({ ...manualIngredient, calories: Number(e.target.value) })}
-                        placeholder="Kcal"
-                        className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-sm font-black text-pink outline-none focus:border-pink/50"
-                      />
-                      <button onClick={addManualIngredientToMeal} className="rounded-2xl bg-pink text-dark px-4 py-3 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">
-                        Add
-                      </button>
+                        className="w-full rounded-2xl bg-black/30 border border-white/10 px-5 py-4 text-base font-black outline-none focus:border-pink/50"
+                      >
+                        {MEAL_UNIT_OPTIONS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                      </select>
                     </div>
-                    <div className="grid grid-cols-3 gap-3 mt-3">
-                      <input type="number" value={manualIngredient.protein} onChange={e => setManualIngredient({ ...manualIngredient, protein: Number(e.target.value) })} placeholder="Protein g" className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-xs font-black text-lime outline-none" />
-                      <input type="number" value={manualIngredient.carbs} onChange={e => setManualIngredient({ ...manualIngredient, carbs: Number(e.target.value) })} placeholder="Carbs g" className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-xs font-black text-sky outline-none" />
-                      <input type="number" value={manualIngredient.fats} onChange={e => setManualIngredient({ ...manualIngredient, fats: Number(e.target.value) })} placeholder="Fats g" className="rounded-2xl bg-black/30 border border-white/10 px-4 py-3 text-xs font-black outline-none" />
+
+                    <button
+                      onClick={lookupManualIngredientNutrition}
+                      disabled={manualLookupLoading || !manualIngredient.name.trim()}
+                      className="w-full rounded-2xl border border-lime/20 bg-lime/10 py-4 text-[10px] font-black uppercase tracking-widest text-lime disabled:opacity-30 active:scale-95 transition-all"
+                    >
+                      {manualLookupLoading ? 'Looking Up Nutrition...' : 'AI Nutrition Lookup'}
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <input type="number" value={manualIngredient.calories} onChange={e => setManualIngredient({ ...manualIngredient, calories: e.target.value })} placeholder="Calories" className="rounded-2xl bg-black/30 border border-white/10 px-5 py-4 text-base font-black text-pink outline-none focus:border-pink/50" />
+                      <input type="number" value={manualIngredient.protein} onChange={e => setManualIngredient({ ...manualIngredient, protein: e.target.value })} placeholder="Protein (g)" className="rounded-2xl bg-black/30 border border-white/10 px-5 py-4 text-base font-black text-lime outline-none focus:border-pink/50" />
+                      <input type="number" value={manualIngredient.carbs} onChange={e => setManualIngredient({ ...manualIngredient, carbs: e.target.value })} placeholder="Carbs (g)" className="rounded-2xl bg-black/30 border border-white/10 px-5 py-4 text-base font-black text-sky outline-none focus:border-pink/50" />
+                      <input type="number" value={manualIngredient.fats} onChange={e => setManualIngredient({ ...manualIngredient, fats: e.target.value })} placeholder="Fat (g)" className="rounded-2xl bg-black/30 border border-white/10 px-5 py-4 text-base font-black outline-none focus:border-pink/50" />
                     </div>
+
+                    <button onClick={addManualIngredientToMeal} className="w-full rounded-2xl bg-pink text-dark px-4 py-4 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">
+                      Add Ingredient
+                    </button>
                   </div>
                 </div>
 
@@ -1300,7 +1515,9 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
                             </div>
                             <div className="grid grid-cols-6 gap-2 mt-3">
                               <input type="number" value={item.qty} onChange={e => updateMealBuilderComponent(item.id, 'qty', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black outline-none" />
-                              <input value={item.unit} onChange={e => updateMealBuilderComponent(item.id, 'unit', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-bold outline-none" />
+                              <select value={item.unit} onChange={e => updateMealBuilderComponent(item.id, 'unit', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-bold outline-none">
+                                {MEAL_UNIT_OPTIONS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                              </select>
                               <input type="number" value={item.calories} onChange={e => updateMealBuilderComponent(item.id, 'calories', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black text-pink outline-none" />
                               <input type="number" value={item.protein} onChange={e => updateMealBuilderComponent(item.id, 'protein', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black text-lime outline-none" />
                               <input type="number" value={item.carbs} onChange={e => updateMealBuilderComponent(item.id, 'carbs', e.target.value)} className="rounded-xl bg-black/30 border border-white/10 px-2 py-2 text-[11px] font-black text-sky outline-none" />
