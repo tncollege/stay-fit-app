@@ -537,13 +537,31 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
     water: Math.max(0, Math.round(waterGap * 10) / 10),
   }), [targets, consumed, waterGap]);
 
+  // Nutrition should guide the next eating decision, not duplicate the dashboard PCF summary.
+  // These values are capped into realistic next-meal targets so large full-day gaps never overflow compact cards.
+  const nextMealFuelTarget = useMemo(() => {
+    const calories = macroGaps.calories <= 0 ? 0 : Math.min(700, Math.max(350, macroGaps.calories));
+    const protein = macroGaps.protein <= 0 ? 0 : Math.min(45, Math.max(25, macroGaps.protein));
+    const carbs = macroGaps.carbs <= 0 ? 0 : Math.min(70, Math.max(25, macroGaps.carbs));
+    const fats = macroGaps.fats <= 0 ? 0 : Math.min(18, Math.max(8, macroGaps.fats));
+
+    const action = protein > 0 && carbs > 0
+      ? `Build next meal: ${protein}g protein + ${carbs}g carbs, fats ${fats}g max.`
+      : protein > 0
+        ? `Build next meal around ${protein}g lean protein.`
+        : carbs > 0
+          ? `Use ${carbs}g clean carbs around training.`
+          : 'Macros are on track. Focus on hydration and consistency.';
+
+    return { calories, protein, carbs, fats, action };
+  }, [macroGaps]);
+
   const fuelBalanceCards = useMemo(() => ([
-    { label: 'Calories left', value: macroGaps.calories > 0 ? String(macroGaps.calories) : 'Done', unit: macroGaps.calories > 0 ? 'kcal' : '', tone: 'text-pink', action: macroGaps.calories > 500 ? 'Add balanced meal' : 'Maintain' },
-    { label: 'Protein left', value: String(macroGaps.protein), unit: 'g', tone: 'text-lime', action: macroGaps.protein > 25 ? 'Lean protein' : 'On track' },
-    { label: 'Carbs left', value: String(macroGaps.carbs), unit: 'g', tone: 'text-sky', action: macroGaps.carbs > 45 ? 'Workout fuel' : 'Controlled' },
-    { label: 'Fats left', value: String(macroGaps.fats), unit: 'g', tone: 'text-amber-300', action: macroGaps.fats > 20 ? 'Moderate fats' : 'Keep lean' },
-    { label: 'Water left', value: macroGaps.water > 0 ? macroGaps.water.toFixed(1) : 'Done', unit: macroGaps.water > 0 ? 'L' : '', tone: 'text-sky', action: macroGaps.water > 0.5 ? 'Sip now' : 'Hydrated' },
-  ]), [macroGaps]);
+    { label: 'Meal energy', value: nextMealFuelTarget.calories > 0 ? String(nextMealFuelTarget.calories) : 'Done', unit: nextMealFuelTarget.calories > 0 ? 'kcal' : '', tone: 'text-pink', action: nextMealFuelTarget.calories > 0 ? 'Next meal range' : 'Complete' },
+    { label: 'Protein', value: nextMealFuelTarget.protein > 0 ? String(nextMealFuelTarget.protein) : '0', unit: 'g', tone: 'text-lime', action: nextMealFuelTarget.protein > 0 ? 'Priority' : 'On track' },
+    { label: 'Carbs', value: nextMealFuelTarget.carbs > 0 ? String(nextMealFuelTarget.carbs) : '0', unit: 'g', tone: 'text-sky', action: nextMealFuelTarget.carbs > 0 ? 'Fuel' : 'Controlled' },
+    { label: 'Fats', value: nextMealFuelTarget.fats > 0 ? String(nextMealFuelTarget.fats) : '0', unit: 'g', tone: 'text-amber-300', action: nextMealFuelTarget.fats > 0 ? 'Limit' : 'Keep lean' },
+  ]), [nextMealFuelTarget]);
 
   // Conversions for non-standard serving sizes
   const CONVERSIONS: Record<string, number> = {
@@ -1394,27 +1412,32 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
                 +500ml Water
               </button>
             </div>
-            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Fuel Balance</div>
-                  <div className="mt-1 text-[9px] font-bold uppercase tracking-widest text-white/30">Macro gaps for the next eating decision</div>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Next Meal Fuel Target</div>
+                  <div className="mt-1 text-[9px] font-bold uppercase tracking-widest text-white/30">Action target from today’s remaining gaps</div>
                 </div>
                 {performanceEngine?.nutrition?.targets && (
-                  <div className="rounded-full border border-lime/20 bg-lime/10 px-3 py-1 text-[8px] font-black uppercase tracking-widest text-lime">
+                  <div className="self-start shrink-0 rounded-full border border-lime/20 bg-lime/10 px-3 py-1 text-[8px] font-black uppercase tracking-widest text-lime">
                     WHOOP adjusted
                   </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[10px] font-black uppercase tracking-widest">
+              <div className="mb-3 rounded-xl border border-lime/10 bg-lime/[0.04] px-3 py-2 text-[10px] font-bold leading-snug text-white/60">
+                {nextMealFuelTarget.action}
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                 {fuelBalanceCards.map(card => (
-                  <div key={card.label} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-white/50">
-                    {card.label}
-                    <div className={"mt-1 text-sm " + card.tone}>
-                      {card.value}{card.unit && <span className="ml-1 text-[9px] text-white/30">{card.unit}</span>}
+                  <div key={card.label} className="min-w-0 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-white/50 overflow-hidden">
+                    <div className="truncate text-[9px] font-black uppercase tracking-widest">{card.label}</div>
+                    <div className={"mt-1 flex min-w-0 items-end gap-1 " + card.tone}>
+                      <span className="min-w-0 truncate text-lg font-black leading-none tracking-tight">{card.value}</span>
+                      {card.unit && <span className="shrink-0 pb-0.5 text-[9px] font-black uppercase tracking-widest text-white/30">{card.unit}</span>}
                     </div>
-                    <div className="mt-1 text-[8px] font-black uppercase tracking-widest text-white/25">
+                    <div className="mt-1 truncate text-[8px] font-black uppercase tracking-widest text-white/25">
                       {card.action}
                     </div>
                   </div>
