@@ -458,23 +458,26 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
     let baseCalories = w * 30;
     if (profile.goal === 'Fat Loss') baseCalories -= 500;
     if (profile.goal === 'Muscle Gain') baseCalories += 300;
-    if (profile.goal === 'Body Recomposition') baseCalories += 0; // Maintenance
+
     return {
       calories: Math.round(baseCalories),
       protein: Math.round(w * 2),
-      carbs: Math.round(baseCalories * 0.4 / 4),
-      fats: Math.round(baseCalories * 0.3 / 9),
+      carbs: Math.round((baseCalories * 0.4) / 4),
+      fats: Math.round((baseCalories * 0.3) / 9),
       water: 3.5,
     };
   }, [profile]);
 
   const consumed = useMemo(() => {
-    return mealsArr.reduce((acc, m) => ({
-      calories: acc.calories + m.calories,
-      protein: acc.protein + m.protein,
-      carbs: acc.carbs + m.carbs,
-      fats: acc.fats + m.fats,
-    }), { calories: 0, protein: 0, carbs: 0, fats: 0 });
+    return mealsArr.reduce(
+      (acc, m) => ({
+        calories: acc.calories + m.calories,
+        protein: acc.protein + m.protein,
+        carbs: acc.carbs + m.carbs,
+        fats: acc.fats + m.fats,
+      }),
+      { calories: 0, protein: 0, carbs: 0, fats: 0 }
+    );
   }, [mealsArr]);
 
   const burned = useMemo(() => {
@@ -482,13 +485,9 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
   }, [workoutArr]);
 
   const dynamicTargets = useMemo(() => {
-    // Add burned calories to the goal
     const totalCal = targets.calories + burned;
-    const protein = targets.protein; // Protein remains BW-dependent
-    // Re-calculate carbs and fats to fill the new calorie goal
-    // We keep fixed protein, so carbs/fats share the rest. 
-    // Simplified: just scale with ratios but respecting protein floor.
-    const remainingCals = totalCal - (protein * 4);
+    const protein = targets.protein;
+    const remainingCals = totalCal - protein * 4;
     const carbs = Math.round((remainingCals * 0.6) / 4);
     const fats = Math.round((remainingCals * 0.4) / 9);
     const water = targets.water + (burned / 500) * 0.5;
@@ -501,6 +500,10 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
   const remaining = targets.calories - netCalories;
   const progressPct = Math.min(100, Math.round((consumed.calories / dynamicTargets.calories) * 100));
 
+  const proteinRemaining = Math.max(0, dynamicTargets.protein - consumed.protein);
+  const waterRemaining = Math.max(0, dynamicTargets.water - waterTotal);
+  const stepsRemaining = Math.max(0, stepGoal - stepsToday);
+
   const fetchInsight = async () => {
     setInsightLoading(true);
     const insight = await generateDailyInsight({
@@ -508,22 +511,116 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
       consumed,
       targets: dynamicTargets,
       workouts: workoutArr,
-      waterTotal
+      waterTotal,
     });
     setAiInsight(insight);
     setInsightLoading(false);
   };
 
   useEffect(() => {
-    if (!aiInsight) {
-      fetchInsight();
-    }
+    if (!aiInsight) fetchInsight();
   }, []);
+
+  const TodayActionPanel = () => {
+    return (
+      <section className="rounded-3xl border border-lime/20 bg-panel/80 p-5 shadow-xl shadow-lime/5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-lime">
+              Today's Action Plan
+            </p>
+            <h3 className="text-xl font-black uppercase tracking-tight">
+              What to do next
+            </h3>
+          </div>
+
+          <span className="rounded-full border border-lime/30 px-3 py-1 text-xs font-bold text-lime">
+            Live
+          </span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <ActionItem
+            icon="🏋️"
+            title="Workout"
+            value={workoutArr.length > 0 ? "Workout logged" : "Start today's session"}
+            button={workoutArr.length > 0 ? "View" : "Start"}
+            onClick={() => setActiveTab("workout")}
+          />
+
+          <ActionItem
+            icon="🍗"
+            title="Protein"
+            value={`${Math.round(proteinRemaining)}g remaining`}
+            button="Log Meal"
+            onClick={() => setActiveTab("nutrition")}
+          />
+
+          <ActionItem
+            icon="💧"
+            title="Hydration"
+            value={`${waterRemaining.toFixed(1)}L remaining`}
+            button="+500ml"
+            onClick={async () => {
+              const currentMl = Math.round(waterTotal * 1000);
+              const nextTotalMl = currentMl + 500;
+
+              setData((prev: AppData) => ({
+                ...prev,
+                water: {
+                  ...prev.water,
+                  [today]: [{ amount: nextTotalMl, time: Date.now() }],
+                },
+              }));
+
+              try {
+                await saveWaterTotal(today, nextTotalMl, Date.now());
+              } catch (err) {
+                console.error("Dashboard water save error ❌", err);
+              }
+            }}
+          />
+
+          <ActionItem
+            icon="🚶"
+            title="Steps"
+            value={`${stepsRemaining.toLocaleString()} steps pending`}
+            button="Walk"
+            onClick={() => setActiveTab("progress")}
+          />
+        </div>
+      </section>
+    );
+  };
+
+  const ActionItem = ({ icon, title, value, button, onClick }: any) => {
+    return (
+      <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 p-4">
+        <div className="flex items-center gap-3">
+          <div className="text-2xl">{icon}</div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-white/50">
+              {title}
+            </p>
+            <p className="text-sm font-bold text-white">{value}</p>
+          </div>
+        </div>
+
+        <button
+          onClick={onClick}
+          className="rounded-xl bg-lime px-3 py-2 text-xs font-black uppercase text-black shadow-lg shadow-lime/20 hover:scale-105 active:scale-95 transition-all"
+        >
+          {button}
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-8">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-2">
         <DateNavigator viewDate={viewDate} setViewDate={setViewDate} />
+
         <div className="flex items-center gap-4 text-white/40 text-[10px] font-black uppercase tracking-widest hidden md:flex">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-lime" />
@@ -534,148 +631,141 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
         </div>
       </header>
 
+      <TodayActionPanel />
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-      <div className="xl:col-span-2 space-y-8">
-        {/* Calories Ring - Interactive Progress */}
-        <div className="stat-card p-10 flex flex-col items-center relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-full h-1 bg-white/[0.05]">
-            <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: `${progressPct}%` }}
-              className="h-full bg-lime shadow-[0_0_15px_rgba(215,255,0,0.5)]"
-            />
-          </div>
-          
-          <div className="flex justify-between w-full mb-8">
-            <div>
-              <div className="label-small uppercase tracking-widest opacity-40">Metabolic Status</div>
-              <div className="text-[10px] font-black text-lime uppercase mt-1 tracking-widest">{profile.goal} Phase</div>
-            </div>
-            <div className="text-right">
-              <div className="text-lime text-[10px] font-black uppercase tracking-tighter">{progressPct}% Complete</div>
-              <div className="label-small opacity-20 text-[8px]">Daily Protocol</div>
-            </div>
-          </div>
-
-          <div className="relative w-72 h-72 flex items-center justify-center">
-            {/* SVG Ring for better control and animation */}
-            <svg className="absolute inset-0 w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
-              {/* Background Path */}
-              <circle
-                cx="50"
-                cy="50"
-                r="44"
-                stroke="currentColor"
-                strokeWidth="6"
-                fill="transparent"
-                className="text-white/[0.03]"
+        <div className="xl:col-span-2 space-y-8">
+          <div className="stat-card p-10 flex flex-col items-center relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-full h-1 bg-white/[0.05]">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                className="h-full bg-lime shadow-[0_0_15px_rgba(215,255,0,0.5)]"
               />
-              {/* Progress Path */}
-              <motion.circle
-                cx="50"
-                cy="50"
-                r="44"
-                stroke="currentColor"
-                strokeWidth="6"
-                fill="transparent"
-                strokeDasharray="276.46"
-                initial={{ strokeDashoffset: 276.46 }}
-                animate={{ strokeDashoffset: 276.46 - (276.46 * progressPct) / 100 }}
-                transition={{ duration: 1.5, ease: "circOut" }}
-                strokeLinecap="round"
-                className="text-lime shadow-xl"
-              />
-            </svg>
-            
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="text-center z-10"
-            >
-              <div className="text-7xl font-black tracking-tighter leading-none mb-1 drop-shadow-2xl">
-                {remaining > 0 ? remaining.toLocaleString() : "Goal"}
+            </div>
+
+            <div className="flex justify-between w-full mb-8">
+              <div>
+                <div className="label-small uppercase tracking-widest opacity-40">Metabolic Status</div>
+                <div className="text-[10px] font-black text-lime uppercase mt-1 tracking-widest">
+                  {profile.goal} Phase
+                </div>
               </div>
-              <div className={`label-small uppercase tracking-[0.2em] ${remaining > 0 ? 'text-lime' : 'text-pink'}`}>
-                {remaining > 0 ? 'Remaining' : 'Over Limit'}
+              <div className="text-right">
+                <div className="text-lime text-[10px] font-black uppercase tracking-tighter">
+                  {progressPct}% Complete
+                </div>
+                <div className="label-small opacity-20 text-[8px]">Daily Protocol</div>
               </div>
-            </motion.div>
+            </div>
+
+            <div className="relative w-72 h-72 flex items-center justify-center">
+              <svg className="absolute inset-0 w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="44" stroke="currentColor" strokeWidth="6" fill="transparent" className="text-white/[0.03]" />
+                <motion.circle
+                  cx="50"
+                  cy="50"
+                  r="44"
+                  stroke="currentColor"
+                  strokeWidth="6"
+                  fill="transparent"
+                  strokeDasharray="276.46"
+                  initial={{ strokeDashoffset: 276.46 }}
+                  animate={{ strokeDashoffset: 276.46 - (276.46 * progressPct) / 100 }}
+                  transition={{ duration: 1.5, ease: "circOut" }}
+                  strokeLinecap="round"
+                  className="text-lime shadow-xl"
+                />
+              </svg>
+
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center z-10">
+                <div className="text-7xl font-black tracking-tighter leading-none mb-1 drop-shadow-2xl">
+                  {remaining > 0 ? remaining.toLocaleString() : "Goal"}
+                </div>
+                <div className={`label-small uppercase tracking-[0.2em] ${remaining > 0 ? "text-lime" : "text-pink"}`}>
+                  {remaining > 0 ? "Remaining" : "Over Limit"}
+                </div>
+              </motion.div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-8 mt-12 w-full max-w-md pt-8 border-t border-white/5">
+              <div className="text-center">
+                <div className="text-xl font-bold">{targets.calories.toLocaleString()}</div>
+                <div className="label-small opacity-30 mt-1">Goal</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-pink">-{Math.round(consumed.calories).toLocaleString()}</div>
+                <div className="label-small opacity-30 mt-1">Food</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-sky">+{Math.round(burned).toLocaleString()}</div>
+                <div className="label-small opacity-30 mt-1">Exercise</div>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-8 mt-12 w-full max-w-md pt-8 border-t border-white/5">
-            <div className="text-center">
-              <div className="text-xl font-bold">{targets.calories.toLocaleString()}</div>
-              <div className="label-small opacity-30 mt-1">Goal</div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="ai-coach-card relative overflow-hidden group">
+            <div className="flex justify-between items-start mb-4">
+              <div className="ai-tag">GYM-E • ADVISOR</div>
+              <button
+                onClick={fetchInsight}
+                disabled={insightLoading}
+                className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-lime hover:bg-lime/10 transition-all opacity-0 group-hover:opacity-100"
+              >
+                <Activity size={14} className={insightLoading ? "animate-spin" : ""} />
+              </button>
             </div>
-            <div className="text-center">
-              <div className="text-xl font-bold text-pink">-{Math.round(consumed.calories).toLocaleString()}</div>
-              <div className="label-small opacity-30 mt-1">Food</div>
-            </div>
-            <div className="text-center">
-              <div className="text-xl font-bold text-sky">+{Math.round(burned).toLocaleString()}</div>
-              <div className="label-small opacity-30 mt-1">Exercise</div>
-            </div>
-          </div>
-        </div>
 
-        {/* AI Insight Card */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="ai-coach-card relative overflow-hidden group"
-        >
-          <div className="flex justify-between items-start mb-4">
-            <div className="ai-tag">GYM-E • ADVISOR</div>
-            <button 
-              onClick={fetchInsight}
-              disabled={insightLoading}
-              className="p-2 bg-white/5 rounded-lg text-white/40 hover:text-lime hover:bg-lime/10 transition-all opacity-0 group-hover:opacity-100"
-            >
-              <Activity size={14} className={insightLoading ? 'animate-spin' : ''} />
-            </button>
-          </div>
-          
-          {insightLoading ? (
-             <div className="flex items-center gap-3 text-lime font-black italic text-sm py-2">
+            {insightLoading ? (
+              <div className="flex items-center gap-3 text-lime font-black italic text-sm py-2">
                 <Brain className="w-5 h-5 animate-pulse" />
                 Analyzing metabolic data streams...
-             </div>
-          ) : (
-            <>
-              <h2 className="text-2xl font-bold mb-2 tracking-tight">Personalized Performance Insight</h2>
-              <p className="text-sm opacity-70 leading-relaxed max-w-xl italic">
-                "{aiInsight || "Calibrating systems... Log more data to unlock deeper bio-insights."}"
-              </p>
-            </>
-          )}
-        </motion.div>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-2xl font-bold mb-2 tracking-tight">Personalized Performance Insight</h2>
+                <p className="text-sm opacity-70 leading-relaxed max-w-xl italic">
+                  &quot;{aiInsight || "Calibrating systems... Log more data to unlock deeper bio-insights."}&quot;
+                </p>
+              </>
+            )}
+          </motion.div>
 
-        <div className="stat-card">
-          <div className="flex justify-between items-center mb-6">
-            <div className="label-small">Macro Distribution</div>
-            <div className="text-sky text-xs font-bold font-mono">Dynamic Goals Matrix</div>
+          <div className="stat-card">
+            <div className="flex justify-between items-center mb-6">
+              <div className="label-small">Macro Distribution</div>
+              <div className="text-sky text-xs font-bold font-mono">Dynamic Goals Matrix</div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <MacroColumn label="Protein" current={consumed.protein} target={dynamicTargets.protein} color="lime" />
+              <MacroColumn label="Carbs" current={consumed.carbs} target={dynamicTargets.carbs} color="sky" />
+              <MacroColumn label="Fats" current={consumed.fats} target={dynamicTargets.fats} color="pink" />
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <MacroColumn label="Protein" current={consumed.protein} target={dynamicTargets.protein} color="lime" />
-            <MacroColumn label="Carbs" current={consumed.carbs} target={dynamicTargets.carbs} color="sky" />
-            <MacroColumn label="Fats" current={consumed.fats} target={dynamicTargets.fats} color="pink" />
-          </div>
+
+          <MicronutrientsPanel data={data} viewDate={viewDate} />
         </div>
 
-        <MicronutrientsPanel data={data} viewDate={viewDate} />
-      </div>
+        <aside className="space-y-6">
+          <div className="label-small px-2 text-sky flex justify-between items-center">
+            <span>Active Energy</span>
+            <span className="text-white/40">
+              {stepsToday.toLocaleString()} / {stepGoal.toLocaleString()} Steps
+            </span>
+          </div>
 
-      {/* Side Routine Panel */}
-      <aside className="space-y-6">
-        <div className="label-small px-2 text-sky flex justify-between items-center">
-          <span>Active Energy</span>
-          <span className="text-white/40">{stepsToday.toLocaleString()} / {stepGoal.toLocaleString()} Steps</span>
-        </div>
-        <div className="stat-card p-6 flex items-center gap-6 group hover:border-sky/40 transition-all cursor-pointer" onClick={() => setActiveTab('progress')}>
-           <div className="relative w-16 h-16 flex items-center justify-center flex-shrink-0">
-             <svg className="absolute inset-0 w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
+          <div className="stat-card p-6 flex items-center gap-6 group hover:border-sky/40 transition-all cursor-pointer" onClick={() => setActiveTab("progress")}>
+            <div className="relative w-16 h-16 flex items-center justify-center flex-shrink-0">
+              <svg className="absolute inset-0 w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r="44" stroke="currentColor" strokeWidth="10" fill="transparent" className="text-white/[0.03]" />
                 <motion.circle
-                  cx="50" cy="50" r="44" stroke="currentColor" strokeWidth="10" fill="transparent"
+                  cx="50"
+                  cy="50"
+                  r="44"
+                  stroke="currentColor"
+                  strokeWidth="10"
+                  fill="transparent"
                   strokeDasharray="276.46"
                   initial={{ strokeDashoffset: 276.46 }}
                   animate={{ strokeDashoffset: 276.46 - (276.46 * stepProgress) / 100 }}
@@ -683,89 +773,104 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
                   strokeLinecap="round"
                   className="text-sky"
                 />
-             </svg>
-             <Footprints className="text-sky p-1" size={24} />
-           </div>
-           <div className="flex-1">
-             <div className="text-sm font-bold tracking-tight">Movement Cycle</div>
-             <div className="h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${stepProgress}%` }}
-                  className="h-full bg-sky"
-                />
-             </div>
-             <div className="flex justify-between mt-1">
-                <span className="text-[10px] font-bold text-sky opacity-80">{stepProgress}%</span>
-                <span className="text-[10px] opacity-40 font-mono italic text-right">Goal: {(stepGoal / 1000).toFixed(0)}k</span>
-             </div>
-           </div>
-        </div>
-
-        <div className="label-small px-2 text-sky">Hydration Status</div>
-        <div className="stat-card">
-           <MacroColumn label="Water Intake" current={waterTotal} target={dynamicTargets.water} unit="L" color="sky" />
-           <div className="grid grid-cols-3 gap-2 mt-5">
-             {[250, 500, 750].map((amt) => (
-               <button
-                 key={amt}
-                 onClick={async () => {
-                   const currentMl = Math.round(waterTotal * 1000);
-                   const nextTotalMl = currentMl + amt;
-                   setData((prev: AppData) => ({
-                     ...prev,
-                     water: {
-                       ...prev.water,
-                       [today]: [{ amount: nextTotalMl, time: Date.now() }],
-                     },
-                   }));
-                   try {
-                     await saveWaterTotal(today, nextTotalMl, Date.now());
-                   } catch (err) {
-                     console.error('Dashboard water save error ❌', err);
-                   }
-                 }}
-                 className="py-3 rounded-xl bg-sky/10 border border-sky/20 text-sky text-[10px] font-black uppercase tracking-widest hover:bg-sky/20 transition-all"
-               >
-                 +{amt}ml
-               </button>
-             ))}
-           </div>
-        </div>
-
-        <div className="label-small px-2">Today's Routine</div>
-        <div className="space-y-3">
-          {workoutArr.length > 0 ? (
-            workoutArr.map((w, idx) => (
-              <div key={idx} className="bg-panel border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-lime/40 transition-colors">
-                <div className="w-2 h-2 rounded-full bg-lime shadow-[0_0_8px_rgba(215,255,0,0.8)]" />
-                <div>
-                  <div className="text-sm font-bold">{w.name}</div>
-                  <div className="label-small opacity-50">{w.category} • {w.caloriesBurned} kcal</div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="bg-panel border border-border border-dashed rounded-2xl p-8 text-center">
-              <div className="label-small mb-2">No activity logged</div>
-              <p className="text-[10px] opacity-40">Ready to sync your training session?</p>
+              </svg>
+              <Footprints className="text-sky p-1" size={24} />
             </div>
-          )}
-        </div>
 
-        <button className="w-full bg-lime text-dark py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-lime/20 hover:scale-[1.02] active:scale-95 transition-all">
-          Start Training Session
-        </button>
+            <div className="flex-1">
+              <div className="text-sm font-bold tracking-tight">Movement Cycle</div>
+              <div className="h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
+                <motion.div initial={{ width: 0 }} animate={{ width: `${stepProgress}%` }} className="h-full bg-sky" />
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-[10px] font-bold text-sky opacity-80">{stepProgress}%</span>
+                <span className="text-[10px] opacity-40 font-mono italic text-right">
+                  Goal: {(stepGoal / 1000).toFixed(0)}k
+                </span>
+              </div>
+            </div>
+          </div>
 
-        <div className="p-5 border border-border border-dashed rounded-2xl text-center bg-white/[0.02]">
-           <div className="label-small text-lime mb-2">Gym-E Tip</div>
-           <p className="text-[11px] leading-relaxed opacity-60">"Your recovery is currently {round(82)}%. Maintain moderate intensity for today's session."</p>
-        </div>
-      </aside>
+          <div className="label-small px-2 text-sky">Hydration Status</div>
+
+          <div className="stat-card">
+            <MacroColumn label="Water Intake" current={waterTotal} target={dynamicTargets.water} unit="L" color="sky" />
+
+            <div className="grid grid-cols-3 gap-2 mt-5">
+              {[250, 500, 750].map((amt) => (
+                <button
+                  key={amt}
+                  onClick={async () => {
+                    const currentMl = Math.round(waterTotal * 1000);
+                    const nextTotalMl = currentMl + amt;
+
+                    setData((prev: AppData) => ({
+                      ...prev,
+                      water: {
+                        ...prev.water,
+                        [today]: [{ amount: nextTotalMl, time: Date.now() }],
+                      },
+                    }));
+
+                    try {
+                      await saveWaterTotal(today, nextTotalMl, Date.now());
+                    } catch (err) {
+                      console.error("Dashboard water save error ❌", err);
+                    }
+                  }}
+                  className="py-3 rounded-xl bg-sky/10 border border-sky/20 text-sky text-[10px] font-black uppercase tracking-widest hover:bg-sky/20 transition-all"
+                >
+                  +{amt}ml
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="label-small px-2">Today's Routine</div>
+
+          <div className="space-y-3">
+            {workoutArr.length > 0 ? (
+              workoutArr.map((w, idx) => (
+                <div key={idx} className="bg-panel border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-lime/40 transition-colors">
+                  <div className="w-2 h-2 rounded-full bg-lime shadow-[0_0_8px_rgba(215,255,0,0.8)]" />
+                  <div>
+                    <div className="text-sm font-bold">{w.name}</div>
+                    <div className="label-small opacity-50">
+                      {w.category} • {w.caloriesBurned} kcal
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="bg-panel border border-lime/20 rounded-2xl p-6 text-center">
+                <div className="text-lg font-black uppercase tracking-tight mb-2">
+                  Let&apos;s start your session 💪
+                </div>
+                <p className="text-[11px] opacity-50">
+                  Gym-E recommends moderate intensity today.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setActiveTab("workout")}
+            className="w-full bg-lime text-dark py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-lime/20 hover:scale-[1.02] active:scale-95 transition-all"
+          >
+            Start Training Session
+          </button>
+
+          <div className="p-5 border border-border border-dashed rounded-2xl text-center bg-white/[0.02]">
+            <div className="label-small text-lime mb-2">Gym-E Tip</div>
+            <p className="text-[11px] leading-relaxed opacity-60">
+              &quot;Your recovery is currently {round(82)}%. Maintain moderate intensity for today's session.&quot;
+            </p>
+          </div>
+        </aside>
+      </div>
     </div>
-  </div>
-);
-}
+  );
+}      
 
 function MacroColumn({ label, current, target, unit = 'g', color }: any) {
   const pct = Math.min(100, Math.round((current / target) * 100));
