@@ -555,15 +555,17 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
 
     const hydrationSafeScore = hasWater ? hydrationScore : 60;
 
-    const score =
-      sleepScore * 0.3 +
-      strainScore * 0.25 +
-      nutritionScore * 0.25 +
-      hydrationSafeScore * 0.2;
+    const rawScore =
+  sleepScore * 0.3 +
+  strainScore * 0.25 +
+  nutritionScore * 0.25 +
+  hydrationSafeScore * 0.2;
 
-    let status = 'Low';
-    if (score > 75) status = 'High';
-    else if (score >= 55) status = 'Moderate';
+const score = Math.round(rawScore);
+
+let status = 'Low';
+if (score > 75) status = 'High';
+else if (score >= 55) status = 'Moderate';
 
     return {
       score: Math.round(score),
