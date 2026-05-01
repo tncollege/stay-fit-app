@@ -74,6 +74,10 @@ const FORM_TIPS: Record<string, any> = {
 
 type Tab = 'strength' | 'cardio' | 'sports' | 'yoga';
 
+type TrainingMode = 'Auto' | 'Push' | 'Pull' | 'Legs' | 'Upper' | 'Lower' | 'Recovery';
+
+const TRAINING_MODES: TrainingMode[] = ['Auto', 'Push', 'Pull', 'Legs', 'Upper', 'Lower', 'Recovery'];
+
 const CATEGORY_IMAGES: Record<string, string> = {
   Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
   Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
@@ -189,6 +193,65 @@ function getWorkoutTotalVolume(sets: WorkoutSet[] = []) {
   return sets.reduce((total, set) => total + getSetVolume(set), 0);
 }
 
+function getRecommendedTrainingMode(score: number, fatigueStatus: string, dayName: string): TrainingMode {
+  if (score < 50 || fatigueStatus === 'High Fatigue') return 'Recovery';
+
+  const day = dayName.toLowerCase();
+  if (day.includes('monday')) return 'Push';
+  if (day.includes('tuesday')) return 'Pull';
+  if (day.includes('wednesday')) return score > 70 ? 'Legs' : 'Upper';
+  if (day.includes('thursday')) return score > 65 ? 'Upper' : 'Recovery';
+  if (day.includes('friday')) return score > 70 ? 'Legs' : 'Lower';
+  if (day.includes('saturday')) return score > 60 ? 'Upper' : 'Recovery';
+  return score > 65 ? 'Push' : 'Recovery';
+}
+
+function getModePrescription(mode: TrainingMode, score: number, fatigueStatus: string) {
+  if (mode === 'Recovery') {
+    return {
+      title: 'Recovery + Mobility',
+      intensity: 'Low',
+      volume: '2–3 light circuits',
+      reps: '12–20 controlled reps',
+      instruction: 'Avoid heavy loading. Use mobility, walking, stretching and light pump work.',
+    };
+  }
+
+  if (score >= 75 && fatigueStatus === 'Normal Fatigue') {
+    return {
+      title: `${mode} Performance Session`,
+      intensity: 'High',
+      volume: '4–5 working sets',
+      reps: '6–10 reps on compounds, 10–15 on isolation',
+      instruction: 'Push progressive overload. Add load or reps where form is stable.',
+    };
+  }
+
+  if (score >= 55) {
+    return {
+      title: `${mode} Hypertrophy Session`,
+      intensity: 'Moderate',
+      volume: '3–4 working sets',
+      reps: '8–12 reps with clean tempo',
+      instruction: 'Train with controlled volume. Keep 1–3 reps in reserve and avoid max attempts.',
+    };
+  }
+
+  return {
+    title: `${mode} Light Session`,
+    intensity: 'Low',
+    volume: '2–3 working sets',
+    reps: '10–15 easy reps',
+    instruction: 'Keep effort low. Focus on form, blood flow and recovery.',
+  };
+}
+
+function formatSessionTime(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
 function getWorkoutDisplayName(w: any) {
   if (!w) return '';
   const name = String(w.name || '').trim();
@@ -300,6 +363,10 @@ export default function WorkoutView({
   const [workoutPlans, setWorkoutPlans] = useState<Record<string, any>>({});
   const [planEditorOpen, setPlanEditorOpen] = useState(false);
   const [completedPlanExercises, setCompletedPlanExercises] = useState<Record<string, boolean>>({});
+  const [trainingMode, setTrainingMode] = useState<TrainingMode>('Auto');
+  const [sessionActive, setSessionActive] = useState(false);
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [sessionElapsed, setSessionElapsed] = useState(0);
 
   const dayNames = useMemo(
     () => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
@@ -336,6 +403,97 @@ const allWorkouts = useMemo<Workout[]>(() => {
   const totalWorkoutVolume = getWorkoutTotalVolume(currentSets);
   const trainedMuscles = Array.from(new Set(currentSets.map((s) => s.muscle).filter(Boolean)));
 
+  const stepsToday = Number(data.steps?.[viewDate] || 0);
+  const stepGoal = Number(data.profile?.stepGoal || 10000);
+  const waterTotal = (data.water?.[viewDate] || []).reduce(
+    (sum: number, item: any) => sum + Number(item.amount || 0),
+    0
+  ) / 1000;
+  const mealsToday = data.meals?.[viewDate] || [];
+  const proteinToday = mealsToday.reduce((sum: number, meal: any) => sum + Number(meal.protein || 0), 0);
+  const weightKg = Number(data.profile?.currentWeight ?? 70);
+  const proteinTarget = Math.max(1, Math.round(weightKg * 2));
+  const todayWorkoutBurn = workoutsArr.reduce((sum: number, w: any) => sum + Number(w.caloriesBurned || 0), 0);
+
+  const weeklyTrainingLoad = useMemo(() => {
+    const baseDate = new Date(viewDate + 'T00:00:00');
+    let total = 0;
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() - i);
+      const key = getLocalDateKey(d);
+      const dayWorkouts = data.workouts?.[key] || [];
+      const dayLoad = dayWorkouts.reduce((sum: number, w: any) => sum + Number(w.caloriesBurned || 0), 0);
+      total += dayLoad * Math.max(0.2, 1 - i * 0.12);
+    }
+
+    return Math.round(total);
+  }, [data.workouts, viewDate]);
+
+  const fatigueStatus =
+    weeklyTrainingLoad > 3000
+      ? 'High Fatigue'
+      : weeklyTrainingLoad > 1800
+      ? 'Moderate Fatigue'
+      : 'Normal Fatigue';
+
+  const workoutReadiness = useMemo(() => {
+    const sleepScore = Number(data.recovery?.[viewDate]?.sleep || 75);
+    const strainScore =
+      todayWorkoutBurn > 0 || stepsToday > 0
+        ? Math.min(
+            100,
+            (todayWorkoutBurn / Math.max(300, weightKg * 5)) * 65 +
+              (stepGoal ? (stepsToday / stepGoal) * 35 : 0)
+          )
+        : 55;
+    const nutritionScore = mealsToday.length ? Math.min(100, (proteinToday / proteinTarget) * 100) : 55;
+    const hydrationScore = waterTotal > 0 ? Math.min(100, (waterTotal / 3.5) * 100) : 60;
+
+    const rawScore = sleepScore * 0.3 + strainScore * 0.25 + nutritionScore * 0.25 + hydrationScore * 0.2;
+    return Math.round(rawScore);
+  }, [
+    data.recovery,
+    viewDate,
+    todayWorkoutBurn,
+    stepsToday,
+    stepGoal,
+    weightKg,
+    mealsToday.length,
+    proteinToday,
+    proteinTarget,
+    waterTotal,
+  ]);
+
+  const recommendedMode = useMemo(
+    () => getRecommendedTrainingMode(workoutReadiness, fatigueStatus, todayName),
+    [workoutReadiness, fatigueStatus, todayName]
+  );
+
+  const activeTrainingMode = trainingMode === 'Auto' ? recommendedMode : trainingMode;
+  const workoutPrescription = useMemo(
+    () => getModePrescription(activeTrainingMode, workoutReadiness, fatigueStatus),
+    [activeTrainingMode, workoutReadiness, fatigueStatus]
+  );
+
+  const startTrainingSession = () => {
+    if (sessionActive) return;
+    const now = Date.now();
+    setSessionActive(true);
+    setSessionStartedAt(now);
+    setSessionElapsed(0);
+    showWorkoutMessage(`${activeTrainingMode} session started`);
+  };
+
+  const resetTrainingSession = () => {
+    setSessionActive(false);
+    setSessionStartedAt(null);
+    setSessionElapsed(0);
+    setTimerActive(false);
+    showWorkoutMessage('Session reset');
+  };
+
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
@@ -356,6 +514,16 @@ const allWorkouts = useMemo<Workout[]>(() => {
   useEffect(() => {
     setEditingPlanDay(todayName);
   }, [todayName]);
+
+  useEffect(() => {
+    if (!sessionActive || !sessionStartedAt) return;
+
+    const id = window.setInterval(() => {
+      setSessionElapsed(Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000)));
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, [sessionActive, sessionStartedAt]);
 
   useEffect(() => {
     const selected = workoutPlans[editingPlanDay];
@@ -547,6 +715,13 @@ const allWorkouts = useMemo<Workout[]>(() => {
     }
 
     setSavingSet(true);
+
+    if (!sessionActive) {
+      const now = Date.now();
+      setSessionActive(true);
+      setSessionStartedAt(now);
+      setSessionElapsed(0);
+    }
 
     const finalExercise = toExerciseTitle(exercise);
     const finalWeight = weight || '0';
@@ -742,13 +917,22 @@ const allWorkouts = useMemo<Workout[]>(() => {
 
     const finalWorkoutName = workoutName && workoutName.trim().length > 1 ? workoutName.trim() : autoWorkoutName;
 
+    const avgRpe = currentSets.reduce(
+      (sum: number, set: any) => sum + Number(set.rpe || 7),
+      0
+    ) / Math.max(1, currentSets.length);
+    const sessionDuration = sessionStartedAt
+      ? Math.max(1, Math.round((Date.now() - sessionStartedAt) / 60000))
+      : undefined;
+
     const newWorkout: Workout = {
       id: safeId(),
       name: finalWorkoutName,
       category: 'Strength',
       muscles: workoutMuscles.length ? workoutMuscles : [selectedMuscle],
       sets: currentSets,
-      caloriesBurned: Math.round(currentSets.length * 25),
+      caloriesBurned: Math.round(currentSets.length * 22 * (avgRpe / 7)),
+      duration: sessionDuration,
     };
 
     await addWorkoutToStateAndCloud(newWorkout);
@@ -758,6 +942,9 @@ const allWorkouts = useMemo<Workout[]>(() => {
     setTimerActive(false);
     setTimerTime(60);
     setRecoveryReason('');
+    setSessionActive(false);
+    setSessionStartedAt(null);
+    setSessionElapsed(0);
   };
 
   const handleAddSportsOrYoga = async (category: 'Sports' | 'Yoga') => {
@@ -882,6 +1069,21 @@ const allWorkouts = useMemo<Workout[]>(() => {
           totalVolume={totalWorkoutVolume}
           trainedMuscles={trainedMuscles}
           currentSets={currentSets}
+        />
+
+        <WorkoutEnginePanel
+          trainingMode={trainingMode}
+          setTrainingMode={setTrainingMode}
+          activeTrainingMode={activeTrainingMode}
+          recommendedMode={recommendedMode}
+          readiness={workoutReadiness}
+          fatigueStatus={fatigueStatus}
+          weeklyTrainingLoad={weeklyTrainingLoad}
+          prescription={workoutPrescription}
+          sessionActive={sessionActive}
+          sessionElapsed={sessionElapsed}
+          startTrainingSession={startTrainingSession}
+          resetTrainingSession={resetTrainingSession}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1099,6 +1301,114 @@ const allWorkouts = useMemo<Workout[]>(() => {
         handleAddCustomExercise={handleAddCustomExercise}
       />
     </>
+  );
+}
+
+function WorkoutEnginePanel({
+  trainingMode,
+  setTrainingMode,
+  activeTrainingMode,
+  recommendedMode,
+  readiness,
+  fatigueStatus,
+  weeklyTrainingLoad,
+  prescription,
+  sessionActive,
+  sessionElapsed,
+  startTrainingSession,
+  resetTrainingSession,
+}: any) {
+  const readinessColor = readiness >= 75 ? 'text-lime' : readiness >= 55 ? 'text-yellow-400' : 'text-pink';
+
+  return (
+    <section className="rounded-[2rem] border border-lime/20 bg-panel/80 p-5 shadow-xl shadow-lime/5 space-y-5">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime">
+            Workout Engine V2
+          </div>
+          <h3 className="text-2xl font-black uppercase tracking-tight mt-1">
+            {prescription.title}
+          </h3>
+          <p className="text-xs text-white/50 font-bold mt-2 max-w-2xl">
+            {prescription.instruction}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 text-center min-w-[280px]">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className={`text-2xl font-black ${readinessColor}`}>{readiness}%</div>
+            <div className="text-[8px] uppercase tracking-widest text-white/30 font-black">
+              Readiness
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="text-sm font-black text-sky">
+              {fatigueStatus.replace(' Fatigue', '')}
+            </div>
+            <div className="text-[8px] uppercase tracking-widest text-white/30 font-black">
+              Fatigue
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="text-sm font-black text-lime">{weeklyTrainingLoad}</div>
+            <div className="text-[8px] uppercase tracking-widest text-white/30 font-black">
+              7D Load
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MiniMetric label="Intensity" value={prescription.intensity} />
+        <MiniMetric label="Volume" value={prescription.volume} />
+        <MiniMetric label="Rep Target" value={prescription.reps} />
+        <MiniMetric label="Recommendation" value={recommendedMode} />
+      </div>
+
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {TRAINING_MODES.map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setTrainingMode(mode)}
+              className={`shrink-0 px-4 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
+                trainingMode === mode
+                  ? 'bg-lime text-dark border-lime shadow-lg shadow-lime/20'
+                  : 'bg-white/[0.03] border-border text-white/40 hover:text-white hover:border-lime/30'
+              }`}
+            >
+              {mode === 'Auto' ? `Auto: ${recommendedMode}` : mode}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          {sessionActive && (
+            <div className="px-4 py-2 rounded-xl bg-lime/10 border border-lime/20 text-lime text-xs font-black font-mono">
+              {formatSessionTime(sessionElapsed)}
+            </div>
+          )}
+
+          <button
+            onClick={startTrainingSession}
+            disabled={sessionActive}
+            className="px-5 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest shadow-lg shadow-lime/20 disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {sessionActive ? 'Session Active' : 'Start Session'}
+          </button>
+
+          <button
+            onClick={resetTrainingSession}
+            className="px-4 py-3 rounded-xl bg-white/[0.03] border border-border text-white/50 text-[10px] font-black uppercase tracking-widest hover:text-white"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
