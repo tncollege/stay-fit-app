@@ -295,7 +295,7 @@ const scaleMacrosFromRef = (qty: number, unit: string, ref?: MacroRef | null) =>
 };
 
 
-export default function Nutrition({ data, setData, viewDate, setViewDate }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void }) {
+export default function Nutrition({ data, setData, viewDate, setViewDate, performanceEngine }: { data: AppData, setData: any, viewDate: string, setViewDate: (d: string) => void, performanceEngine?: any }) {
   const [selectedMeal, setSelectedMeal] = useState('Breakfast');
   const [searchQuery, setSearchQuery] = useState('');
   const [showScanner, setShowScanner] = useState(false);
@@ -392,6 +392,17 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
   }, [mealsArr]);
 
   const targets = useMemo(() => {
+    const engineTargets = performanceEngine?.nutrition?.targets;
+    if (engineTargets) {
+      return {
+        calories: Math.round(Number(engineTargets.calories || 0)),
+        protein: Math.round(Number(engineTargets.protein || 0)),
+        carbs: Math.round(Number(engineTargets.carbs || 0)),
+        fats: Math.round(Number(engineTargets.fats || 0)),
+        water: Number(engineTargets.water || 3.5),
+      };
+    }
+
     const w = data.profile.currentWeight ?? 70;
     let baseCalories = w * 30;
 
@@ -405,7 +416,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
       fats: Math.round((baseCalories * 0.3) / 9),
       water: 3.5,
     };
-  }, [data.profile]);
+  }, [data.profile, performanceEngine]);
 
   useEffect(() => {
     let cancelled = false;
@@ -484,10 +495,10 @@ export default function Nutrition({ data, setData, viewDate, setViewDate }: { da
     return { target, weatherBoost, workoutBoost, stepsBoost, reminder };
   }, [targets.water, workoutBurned, stepsToday, waterTotalL, weatherTemp, weatherAvailable]);
 
-  const smartWaterTarget = hydrationContext.target;
+  const smartWaterTarget = Math.max(hydrationContext.target, Number(performanceEngine?.nutrition?.targets?.water || 0));
   const waterGap = Math.max(0, smartWaterTarget - waterTotalL);
 
-  const workoutStartTime = useMemo(() => extractWorkoutStartTime(workoutArr), [workoutArr]);
+  const workoutStartTime = useMemo(() => performanceEngine?.workout?.startTime || extractWorkoutStartTime(workoutArr), [workoutArr, performanceEngine]);
 
   const nutritionEngine = useMemo(() => buildNutritionEngine({
     meals: mealsArr,

@@ -78,6 +78,12 @@ type TrainingMode = 'Auto' | 'Push' | 'Pull' | 'Legs' | 'Upper' | 'Lower' | 'Rec
 
 const TRAINING_MODES: TrainingMode[] = ['Auto', 'Push', 'Pull', 'Legs', 'Upper', 'Lower', 'Recovery'];
 
+const WORKOUT_WINDOW_MAP: Record<string, { label: string; estimatedStart: string }> = {
+  morning: { label: 'Morning', estimatedStart: '07:00' },
+  afternoon: { label: 'Afternoon', estimatedStart: '14:00' },
+  evening: { label: 'Evening', estimatedStart: '18:00' },
+};
+
 const CATEGORY_IMAGES: Record<string, string> = {
   Chest: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=600&auto=format&fit=crop',
   Back: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=600&auto=format&fit=crop',
@@ -386,11 +392,13 @@ export default function WorkoutView({
   setData,
   viewDate,
   setViewDate,
+  performanceEngine,
 }: {
   data: AppData;
   setData: any;
   viewDate: string;
   setViewDate: (d: string) => void;
+  performanceEngine?: any;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>('strength');
   const [selectedMuscle, setSelectedMuscle] = useState('Chest');
@@ -453,6 +461,29 @@ export default function WorkoutView({
   const [planBodyPartInput, setPlanBodyPartInput] = useState('Chest');
 
   const workoutsArr = data.workouts?.[viewDate] || [];
+  const todaysWorkoutSchedule = (data as any).workoutSchedule?.[viewDate] || {};
+  const selectedWorkoutWindow = todaysWorkoutSchedule.window || performanceEngine?.workout?.window || '';
+  const workoutStartTime = todaysWorkoutSchedule.estimatedStart || todaysWorkoutSchedule.startTime || performanceEngine?.workout?.startTime || null;
+  const setWorkoutWindowForDate = (windowKey: string) => {
+    const selected = WORKOUT_WINDOW_MAP[windowKey];
+    if (!selected) return;
+    setData((prev: any) => ({
+      ...prev,
+      workoutSchedule: {
+        ...(prev.workoutSchedule || {}),
+        [viewDate]: {
+          ...(prev.workoutSchedule?.[viewDate] || {}),
+          window: windowKey,
+          estimatedStart: selected.estimatedStart,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    }));
+    try {
+      localStorage.setItem('stayfit_workout_window_context', JSON.stringify({ date: viewDate, window: windowKey, estimatedStart: selected.estimatedStart }));
+    } catch {}
+    showWorkoutMessage(`Workout window set: ${selected.label}`);
+  };
   const personalExercises = data.personalExercises || [];
   
 const allWorkouts = useMemo<Workout[]>(() => {
@@ -512,6 +543,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
       : 'Normal Fatigue';
 
   const workoutReadiness = useMemo(() => {
+    if (performanceEngine?.readiness?.score) return Math.round(Number(performanceEngine.readiness.score));
     const sleepScore = Number(data.recovery?.[viewDate]?.sleep || 75);
     const strainScore =
       todayWorkoutBurn > 0 || stepsToday > 0
@@ -537,6 +569,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
     proteinToday,
     proteinTarget,
     waterTotal,
+    performanceEngine,
   ]);
 
   const recommendedMode = useMemo(
@@ -563,6 +596,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
   }, [activeTrainingMode, workoutReadiness, fatigueStatus, todayPlan?.planName, workoutEnginePlanName]);
 
   const workoutRecommendationLabel = trainingMode === 'Auto' ? workoutEnginePlanName : activeTrainingMode;
+  const hasLoggedTodayWorkout = workoutsArr.length > 0;
 
   const startTrainingSession = () => {
     if (sessionActive) return;
@@ -1179,6 +1213,9 @@ const allWorkouts = useMemo<Workout[]>(() => {
             <div className="stat-card space-y-8">
               <TabSwitcher activeTab={activeTab} setActiveTab={setActiveTab} />
 
+              {hasLoggedTodayWorkout ? (
+                <TodayWorkoutSummary workouts={workoutsArr} workoutStartTime={workoutStartTime} onExtraSession={startTrainingSession} />
+              ) : (
               <WeeklyPlanSection
                 dayNames={dayNames}
                 todayName={todayName}
@@ -1208,8 +1245,12 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 completedPlanExercises={completedPlanExercises}
                 togglePlanExerciseComplete={togglePlanExerciseComplete}
                 currentSets={currentSets}
+                selectedWorkoutWindow={selectedWorkoutWindow}
+                workoutStartTime={workoutStartTime}
+                setWorkoutWindowForDate={setWorkoutWindowForDate}
                 setShowTipsFor={setShowTipsFor}
               />
+              )}
 
               <AISearchBar
                 searchQuery={searchQuery}
@@ -1588,6 +1629,43 @@ function AISearchBar({ searchQuery, setSearchQuery, handleAiSearch, aiSearching,
   );
 }
 
+
+function TodayWorkoutSummary({ workouts, workoutStartTime, onExtraSession }: any) {
+  const totalSets = (workouts || []).reduce((sum: number, w: any) => sum + ((w.sets || []).length || Number(w.totalSets || 0)), 0);
+  const totalVolume = (workouts || []).reduce((sum: number, w: any) => sum + Number(w.volume || w.totalVolume || 0), 0);
+  const calories = (workouts || []).reduce((sum: number, w: any) => sum + Number(w.caloriesBurned || w.calories || 0), 0);
+  const title = getWorkoutDisplayName(workouts?.[0]) || 'Workout Completed';
+
+  return (
+    <div className="rounded-[2rem] border border-lime/20 bg-lime/[0.04] p-5 space-y-5">
+      <div>
+        <div className="label-small text-lime mb-2">Today’s Workout Summary</div>
+        <h3 className="text-2xl font-black tracking-tight">{title}</h3>
+        <p className="text-[11px] text-white/40 mt-1">
+          Today’s workout is already logged. The plan is hidden now; focus on recovery, hydration and post-workout nutrition.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard label="Sessions" value={(workouts || []).length} />
+        <SummaryCard label="Sets" value={totalSets || '—'} />
+        <SummaryCard label="Volume" value={totalVolume ? `${Math.round(totalVolume)} kg` : '—'} />
+        <SummaryCard label="Calories" value={calories ? `+${Math.round(calories)}` : '—'} />
+      </div>
+      <div className="rounded-2xl border border-sky/20 bg-sky/5 p-4 text-[11px] text-sky font-bold leading-relaxed">
+        {workoutStartTime
+          ? `Nutrition Engine can now use your ${workoutStartTime} workout window for post-workout meal guidance.`
+          : 'Set a workout window next time so Nutrition can time pre/post-workout meals automatically.'}
+      </div>
+      <button
+        onClick={onExtraSession}
+        className="w-full rounded-2xl bg-white/[0.04] border border-border py-3 text-[10px] font-black uppercase tracking-widest text-white/60 hover:text-white"
+      >
+        Start Additional Session
+      </button>
+    </div>
+  );
+}
+
 function WeeklyPlanSection(props: any) {
   const {
     dayNames,
@@ -1618,6 +1696,9 @@ function WeeklyPlanSection(props: any) {
     completedPlanExercises,
     togglePlanExerciseComplete,
     currentSets = [],
+    selectedWorkoutWindow,
+    workoutStartTime,
+    setWorkoutWindowForDate,
   } = props;
 
   const plannedExercises = todayPlan?.exercises || [];
@@ -1656,6 +1737,30 @@ const { setShowTipsFor } = props;
           >
             {planEditorOpen ? 'Close Plan' : 'Edit Plan'}
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">When will you train today?</div>
+        <div className="grid grid-cols-3 gap-2">
+          {Object.entries(WORKOUT_WINDOW_MAP).map(([key, item]: any) => (
+            <button
+              key={key}
+              onClick={() => setWorkoutWindowForDate?.(key)}
+              className={`rounded-xl px-3 py-3 text-[10px] font-black uppercase tracking-widest border transition-all ${
+                selectedWorkoutWindow === key
+                  ? 'bg-lime text-dark border-lime shadow-lg shadow-lime/20'
+                  : 'bg-white/[0.03] text-white/50 border-border hover:text-white'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[11px] text-white/40 mt-3">
+          {workoutStartTime
+            ? `Nutrition will use approx. ${workoutStartTime} for pre/post-workout guidance.`
+            : 'Select a workout window to unlock pre/post-workout meal guidance.'}
         </div>
       </div>
 
