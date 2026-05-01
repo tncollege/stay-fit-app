@@ -1820,15 +1820,94 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
   }, [data.steps]);
 
   const stats = useMemo(() => {
-    const start = data.profile.startWeight || data.profile.currentWeight || 0;
-    const current = data.weights.length > 0 ? data.weights[data.weights.length - 1].weight : (data.profile.currentWeight || 0);
-    const target = data.profile.targetWeight || 0;
+    const sortedWeights = [...(data.weights || [])].sort((a, b) => a.date.localeCompare(b.date));
+    const start = data.profile.startWeight ?? data.profile.currentWeight ?? sortedWeights[0]?.weight ?? 0;
+    const current = sortedWeights.length > 0
+      ? sortedWeights[sortedWeights.length - 1].weight
+      : (data.profile.currentWeight ?? 0);
+    const target = data.profile.targetWeight ?? 0;
     const diff = round(current - start);
     const toGoal = round(current - target);
-    const progress = start !== target ? Math.max(0, Math.min(100, Math.round(((start - current) / (start - target)) * 100))) : 0;
-    
+
+    const totalJourney = start - target;
+    const completedJourney = start - current;
+    const progress = totalJourney !== 0
+      ? Math.max(0, Math.min(100, Math.round((completedJourney / totalJourney) * 100)))
+      : 0;
+
     return { start, current, target, diff, toGoal, progress };
   }, [data.profile, data.weights]);
+
+  const weeklySummary = useMemo(() => {
+    const baseDate = new Date(viewDate || getTodayKey());
+    const keys = Array.from({ length: 7 }, (_, index) => {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() - index);
+      return d.toISOString().split('T')[0];
+    });
+
+    const weeklyWorkouts = keys.reduce(
+      (sum, key) => sum + ((data.workouts?.[key] || []).length > 0 ? 1 : 0),
+      0
+    );
+
+    const weeklyCaloriesBurned = keys.reduce((sum, key) => {
+      const workouts = data.workouts?.[key] || [];
+      return sum + workouts.reduce(
+        (daySum: number, workout: any) => daySum + Number(workout.caloriesBurned || 0),
+        0
+      );
+    }, 0);
+
+    const weeklySteps = keys.reduce((sum, key) => sum + Number(data.steps?.[key] || 0), 0);
+    const avgSteps = Math.round(weeklySteps / 7);
+
+    let proteinTotal = 0;
+    let mealDays = 0;
+
+    keys.forEach((key) => {
+      const meals = data.meals?.[key] || [];
+      if (meals.length > 0) mealDays += 1;
+      proteinTotal += meals.reduce((sum: number, meal: any) => sum + Number(meal.protein || 0), 0);
+    });
+
+    const avgProtein = mealDays > 0 ? Math.round(proteinTotal / mealDays) : 0;
+    const targetProtein = Math.round((data.profile.currentWeight ?? 70) * 2);
+
+    const sortedWeights = [...(data.weights || [])].sort((a, b) => a.date.localeCompare(b.date));
+    const currentWeight = sortedWeights[sortedWeights.length - 1]?.weight ?? data.profile.currentWeight ?? 0;
+    const previousWeight = [...sortedWeights].reverse().find((entry) => entry.date < keys[keys.length - 1])?.weight
+      ?? sortedWeights[0]?.weight
+      ?? currentWeight;
+    const weightDelta = round(currentWeight - previousWeight);
+
+    const workoutScore = Math.min(100, (weeklyWorkouts / 5) * 100);
+    const proteinScore = targetProtein ? Math.min(100, (avgProtein / targetProtein) * 100) : 0;
+    const stepsScore = (data.profile.stepGoal || 10000)
+      ? Math.min(100, (avgSteps / (data.profile.stepGoal || 10000)) * 100)
+      : 0;
+    const consistencyScore = Math.round(workoutScore * 0.4 + proteinScore * 0.35 + stepsScore * 0.25);
+
+    const trendInsight = (() => {
+      if (data.profile.goal === 'Muscle Gain') {
+        if (weightDelta > 0) return 'Lean gain trend is moving upward. Keep protein high and monitor waist/strength.';
+        return 'Weight is not moving up yet. Add calories or improve training consistency.';
+      }
+      if (weightDelta < 0) return 'Fat-loss trend is moving in the right direction. Stay consistent this week.';
+      if (weightDelta > 0) return 'Weight is trending up. Review calories, steps, and weekend intake.';
+      return 'Weight is stable. Improve consistency or adjust calories if progress stalls.';
+    })();
+
+    return {
+      weeklyWorkouts,
+      weeklyCaloriesBurned: Math.round(weeklyCaloriesBurned),
+      avgProtein,
+      avgSteps,
+      weightDelta,
+      consistencyScore,
+      trendInsight,
+    };
+  }, [data.workouts, data.steps, data.meals, data.weights, data.profile, viewDate]);
 
   const handleLogWeight = async () => {
     const weight = Number(logWeight);
@@ -1955,6 +2034,68 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
           </button>
         </div>
       </header>
+
+      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="stat-card p-5 border-lime/20 bg-lime/5">
+          <div className="label-small text-lime mb-2">Weekly Score</div>
+          <div className="text-4xl font-black text-lime">{weeklySummary.consistencyScore}%</div>
+          <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">Consistency Engine</div>
+          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mt-4">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${weeklySummary.consistencyScore}%` }}
+              className="h-full bg-lime shadow-[0_0_10px_rgba(215,255,0,0.5)]"
+            />
+          </div>
+        </div>
+
+        <div className="stat-card p-5">
+          <div className="label-small text-sky mb-2">This Week</div>
+          <div className="text-2xl font-black">{weeklySummary.weeklyWorkouts} Workouts</div>
+          <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">
+            {weeklySummary.weeklyCaloriesBurned.toLocaleString()} kcal burned
+          </div>
+        </div>
+
+        <div className="stat-card p-5">
+          <div className="label-small text-lime mb-2">Nutrition Average</div>
+          <div className="text-2xl font-black">{weeklySummary.avgProtein}g Protein</div>
+          <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">
+            Daily avg from logged meals
+          </div>
+        </div>
+
+        <div className="stat-card p-5">
+          <div className="label-small text-sky mb-2">Movement Average</div>
+          <div className="text-2xl font-black">{weeklySummary.avgSteps.toLocaleString()}</div>
+          <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">Steps / day</div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-lime/20 bg-panel/80 p-5 shadow-xl shadow-lime/5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime mb-2">Progress Intelligence</div>
+            <h3 className="text-xl font-black uppercase tracking-tight">{weeklySummary.trendInsight}</h3>
+            <p className="text-xs text-white/40 mt-2 font-bold uppercase tracking-widest">
+              Weight change this cycle: {weeklySummary.weightDelta > 0 ? '+' : ''}{weeklySummary.weightDelta} {weightUnit}
+            </p>
+          </div>
+          <div className="min-w-[220px]">
+            <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest mb-2">
+              <span className="text-lime">Goal Progress</span>
+              <span className="opacity-50">{stats.progress}%</span>
+            </div>
+            <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${stats.progress}%` }}
+                className="h-full bg-lime shadow-[0_0_10px_rgba(215,255,0,0.5)]"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
