@@ -563,7 +563,7 @@ function Dashboard({ data, setData, setActiveTab, viewDate, setViewDate }: { dat
 
     let status = 'Low';
     if (score > 75) status = 'High';
-    else if (score > 55) status = 'Moderate';
+    else if (score >= 55) status = 'Moderate';
 
     return {
       score: Math.round(score),
