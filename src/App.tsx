@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Home, Utensils, Dumbbell, Brain, User, Heart, BarChart as ChartIcon, Settings, 
   Menu, X, Plus, Activity, Droplets, Camera, Trash2, Download, Upload, 
-  ChevronRight, Calendar, Info, TrendingDown, TrendingUp, Scale, Footprints
+  ChevronRight, Calendar, Info, TrendingDown, TrendingUp, Scale, Footprints, Award, Flame, Target, Star
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -2029,6 +2029,42 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
   const isMetric = data.profile.unitsSystem === 'metric';
   const weightUnit = isMetric ? 'kg' : 'lbs';
 
+  const motivationLayer = useMemo(() => {
+    const score = weeklySummary.consistencyScore || 0;
+    const progress = stats.progress || 0;
+    const goalMode = data.profile.goal || 'Fitness';
+
+    const stage = (() => {
+      if (progress >= 90) return { label: 'Finish Line', message: 'You are close. Protect the routine and finish strong.' };
+      if (progress >= 60) return { label: 'Momentum Zone', message: 'Momentum is building. Keep the next 7 days clean.' };
+      if (progress >= 30) return { label: 'Foundation Built', message: 'The base is ready. Now stack small wins daily.' };
+      return { label: 'Ignition Phase', message: 'Start simple. Log daily and create the first streak.' };
+    })();
+
+    const badge = (() => {
+      if (score >= 85) return { title: 'Elite Week', icon: Flame, detail: 'High consistency across training, protein, and steps.' };
+      if (score >= 65) return { title: 'Strong Week', icon: Award, detail: 'Good rhythm. One more clean day can lift the score.' };
+      if (score >= 40) return { title: 'Rebuild Week', icon: Target, detail: 'Focus on one action today instead of chasing everything.' };
+      return { title: 'Restart Week', icon: Star, detail: 'No guilt. Restart with logging and movement today.' };
+    })();
+
+    const quote = goalMode === 'Muscle Gain'
+      ? 'Build the body one quality session at a time.'
+      : 'Small deficits, strong lifts, daily steps — that is the formula.';
+
+    return { stage, badge, quote };
+  }, [weeklySummary.consistencyScore, stats.progress, data.profile.goal]);
+
+  const motivationMetrics = [
+    { label: 'Goal', value: stats.progress, suffix: '%', accent: 'bg-lime', text: 'text-lime' },
+    { label: 'Weekly', value: weeklySummary.consistencyScore, suffix: '%', accent: 'bg-lime', text: 'text-lime' },
+    { label: 'Workout', value: weeklySummary.workoutScore, suffix: '%', accent: 'bg-sky', text: 'text-sky' },
+    { label: 'Protein', value: weeklySummary.proteinScore, suffix: '%', accent: 'bg-pink', text: 'text-pink' },
+  ];
+
+  const progressGlow = Math.max(6, Math.min(100, stats.progress || 0));
+  const BadgeIcon = motivationLayer.badge.icon;
+
   return (
     <div className="space-y-8">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
@@ -2055,6 +2091,77 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
           </button>
         </div>
       </header>
+
+      <section className="relative overflow-hidden rounded-[2rem] border border-lime/20 bg-gradient-to-br from-lime/10 via-panel to-sky/10 p-5 md:p-6 shadow-2xl shadow-lime/5">
+        <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-lime/10 blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-sky/10 blur-3xl" />
+
+        <div className="relative grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 items-stretch">
+          <div className="flex flex-col md:flex-row gap-6 items-center md:items-stretch">
+            <div className="relative h-52 w-52 shrink-0 rounded-full grid place-items-center bg-black/30 border border-white/10">
+              <div className="absolute inset-4 rounded-full border border-white/10" />
+              <motion.div
+                initial={{ rotate: -90 }}
+                animate={{ rotate: 270 }}
+                transition={{ duration: 1.1, ease: 'easeOut' }}
+                className="absolute inset-0 rounded-full"
+                style={{ background: `conic-gradient(rgba(215,255,0,0.95) ${progressGlow * 3.6}deg, rgba(255,255,255,0.06) 0deg)` }}
+              />
+              <div className="relative h-40 w-40 rounded-full bg-panel border border-white/10 grid place-items-center text-center shadow-inner">
+                <div>
+                  <div className="text-5xl font-black text-lime leading-none">{stats.progress}%</div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/35 mt-2">Journey Done</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 min-w-0 flex flex-col justify-center">
+              <div className="inline-flex items-center gap-2 w-fit rounded-full bg-lime/10 border border-lime/20 px-3 py-1 text-[9px] font-black uppercase tracking-[0.22em] text-lime mb-4">
+                <Flame size={13} /> Visual Motivation Layer
+              </div>
+              <h3 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">
+                {motivationLayer.stage.label}
+              </h3>
+              <p className="text-sm md:text-base text-white/60 mt-3 max-w-2xl">
+                {motivationLayer.stage.message}
+              </p>
+              <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+                {motivationMetrics.map((item) => (
+                  <div key={item.label} className="rounded-2xl bg-black/25 border border-white/10 p-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-white/35">{item.label}</span>
+                      <span className={`text-[10px] font-black ${item.text}`}>{item.value}{item.suffix}</span>
+                    </div>
+                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, item.value)}%` }} className={`h-full ${item.accent}`} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-black/25 border border-white/10 p-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-11 w-11 rounded-2xl bg-lime/10 border border-lime/20 grid place-items-center">
+                  <BadgeIcon className="text-lime" size={22} />
+                </div>
+                <div>
+                  <div className="text-lg font-black">{motivationLayer.badge.title}</div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Today’s badge</div>
+                </div>
+              </div>
+              <p className="text-sm text-white/55 leading-relaxed">{motivationLayer.badge.detail}</p>
+            </div>
+
+            <div className="mt-6 rounded-2xl bg-lime/10 border border-lime/20 p-4">
+              <div className="text-[10px] font-black uppercase tracking-[0.25em] text-lime mb-2">Mindset</div>
+              <p className="text-sm font-bold text-white">“{motivationLayer.quote}”</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="stat-card p-5 border-lime/20 bg-lime/5">
