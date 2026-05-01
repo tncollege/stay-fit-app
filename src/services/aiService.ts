@@ -96,15 +96,33 @@ Return ONLY a JSON object:
 }
 
 export async function generateDailyInsight(data: UnknownRecord) {
-  const prompt = `You are an elite fitness Gym-E.
-Profile: ${JSON.stringify(data.profile)}
-Consumed: ${JSON.stringify(data.consumed)}
-Targets/Goal: ${JSON.stringify(data.targets)}
-Exercise: ${JSON.stringify(data.workouts)}
-Water: ${data.waterTotal}L
+  const recovery = data.recovery as any;
+  const consumed = data.consumed as any;
+  const targets = data.targets as any;
+  const workouts = (data.workouts as any[]) || [];
+  const waterTotal = data.waterTotal as number;
 
-Provide ONE tactical, scientific insight (max 30 words). Focus on metabolic health or protein timing.
-Return ONLY the text.`;
+  const prompt = `
+You are Gym-E, an elite AI fitness coach.
+
+User Data:
+- Recovery Score: ${recovery?.score ?? 0} (${recovery?.status ?? "Unknown"})
+- Calories: ${consumed?.calories ?? 0}/${targets?.calories ?? 0}
+- Protein: ${consumed?.protein ?? 0}/${targets?.protein ?? 0}
+- Water: ${waterTotal ?? 0}L
+- Workouts Done: ${workouts.length}
+
+STRICT RULES:
+1. Recovery status is the MOST IMPORTANT factor.
+2. If recovery is LOW → recommend rest, hydration, mobility. DO NOT suggest hard training.
+3. If recovery is MODERATE → suggest controlled or moderate training.
+4. If recovery is HIGH → suggest pushing intensity.
+5. Only mention nutrition IF it is critically low.
+6. Keep response SHORT (max 2 lines).
+7. Be direct like a coach, NOT generic.
+
+Output must feel like a real coach decision.
+`;
 
   try {
     const result = await callServerAi(prompt);
