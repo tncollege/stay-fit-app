@@ -35,16 +35,41 @@ function safeJsonParse<TFallback extends UnknownRecord>(value: string | null | u
 }
 
 export async function askAiCoach(question: string, context: Pick<AppData, "profile" | "recovery"> & UnknownRecord) {
-  const prompt = `You are the STAYFITINLIFE Gym-E.
-User Profile: ${JSON.stringify(context.profile)}
-Current Daily Status: ${JSON.stringify(context.today)}
-Recovery Status: ${JSON.stringify(context.recovery)}
-Recent Insights: ${JSON.stringify(context.insights)}
+  const coachContext = (context.coachContext || {}) as UnknownRecord;
 
-The user asks: "${question}"
+  const prompt = `You are Gym-E V2, the AI coach inside STAYFITINLIFE.
 
-Provide a concise, motivating, and evidence-based answer. Focus on practical steps.
-Always include a disclaimer that you are an AI and not a medical professional.`;
+USER PROFILE:
+${JSON.stringify(context.profile)}
+
+LIVE APP CONTEXT:
+${JSON.stringify({
+  todayMeals: context.today,
+  recovery: context.recovery,
+  consumed: context.consumed,
+  targets: context.targets,
+  workouts: context.workouts,
+  weeklyLoad: context.weeklyLoad,
+  workoutsThisWeek: context.workoutsThisWeek,
+  fatigueStatus: context.fatigueStatus,
+  recoveryScore: context.recoveryScore,
+  coachMode: context.coachMode,
+  lastWorkout: context.lastWorkout,
+  coachContext,
+})}
+
+USER QUESTION:
+"${question}"
+
+RESPONSE RULES:
+1. Use the live app context. Do not answer generically.
+2. If recoveryScore is low or fatigueStatus is High Fatigue, prioritize recovery and controlled training.
+3. If protein or calories are low, give one practical food fix.
+4. If workouts exist, reference the most relevant recent training pattern.
+5. Use a confident coach tone, but keep it safe.
+6. Keep it concise: max 6 bullets or 2 short paragraphs.
+7. End with one clear next action.
+8. Add a short note that you are an AI coach and not a medical professional when giving health/supplement/medical advice.`;
 
   try {
     const result = await callServerAi(prompt);
