@@ -266,6 +266,50 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
     }
   };
 
+  const dailyQueryCount = data.lastApiQueryDate === new Date().toDateString() ? (data.apiQueryCount || 0) : 0;
+  const aiLimitReached = dailyQueryCount >= 5;
+
+  const renderCoachResponse = (text: string) => {
+    if (!text) return null;
+
+    const normalized = text
+      .replace(/\r\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const sections = normalized
+      .split(/\n\s*\n/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (sections.length <= 1) {
+      return <Markdown>{normalized}</Markdown>;
+    }
+
+    return (
+      <div className="space-y-3">
+        {sections.map((section, idx) => {
+          const clean = section.replace(/^#+\s*/, '');
+          const [firstLine, ...restLines] = clean.split('\n');
+          const looksLikeHeading = firstLine.length <= 80 && /[:：]$/.test(firstLine.trim());
+          const title = looksLikeHeading ? firstLine.replace(/[:：]$/, '') : idx === 0 ? 'Gym-E Summary' : `Action Block ${idx}`;
+          const body = looksLikeHeading ? restLines.join('\n').trim() : section;
+
+          return (
+            <div key={idx} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-lime">
+                {title}
+              </div>
+              <div className="text-sm leading-relaxed text-white/75">
+                <Markdown>{body || section}</Markdown>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -311,9 +355,27 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
           <p className="text-sm font-bold text-white/80">{coachTone}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => askWithPrompt('Generate my best workout recommendation for today using my recovery, fatigue, nutrition and recent workouts.')} className="px-4 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest">Today Workout</button>
-          <button onClick={() => askWithPrompt('Fix my diet for the rest of today using my current calories, protein, macros and goal.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Fix Diet</button>
-          <button onClick={() => askWithPrompt('Give me a recovery protocol for tonight based on my recovery score, fatigue and training load.')} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest">Recover Me</button>
+          <button
+            onClick={() => askWithPrompt('Generate my best workout recommendation for today using my recovery, fatigue, nutrition and recent workouts.')}
+            disabled={loading || aiLimitReached}
+            className="px-4 py-3 rounded-xl bg-lime text-dark text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+          >
+            {loading ? 'Analyzing...' : 'Today Workout'}
+          </button>
+          <button
+            onClick={() => askWithPrompt('Fix my diet for the rest of today using my current calories, protein, macros and goal.')}
+            disabled={loading || aiLimitReached}
+            className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+          >
+            {loading ? 'Analyzing...' : 'Fix Diet'}
+          </button>
+          <button
+            onClick={() => askWithPrompt('Give me a recovery protocol for tonight based on my recovery score, fatigue and training load.')}
+            disabled={loading || aiLimitReached}
+            className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+          >
+            {loading ? 'Analyzing...' : 'Recover Me'}
+          </button>
         </div>
       </div>
 
@@ -343,13 +405,19 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                   ) : (
                     <div className="markdown-body">
                       {loading ? (
-                        <div className="flex flex-col gap-4">
-                          <div className="h-4 bg-white/5 rounded-full w-3/4 animate-pulse" />
-                          <div className="h-4 bg-white/5 rounded-full w-full animate-pulse" />
-                          <div className="h-4 bg-white/5 rounded-full w-2/3 animate-pulse" />
+                        <div className="rounded-2xl border border-lime/20 bg-lime/10 p-5">
+                          <div className="flex items-center gap-3 text-lime text-xs font-black uppercase tracking-widest">
+                            <RefreshCw size={16} className="animate-spin" />
+                            Gym-E is analyzing your live data...
+                          </div>
+                          <div className="mt-4 space-y-3">
+                            <div className="h-4 bg-white/10 rounded-full w-3/4 animate-pulse" />
+                            <div className="h-4 bg-white/10 rounded-full w-full animate-pulse" />
+                            <div className="h-4 bg-white/10 rounded-full w-2/3 animate-pulse" />
+                          </div>
                         </div>
                       ) : (
-                        <Markdown>{response}</Markdown>
+                        renderCoachResponse(response)
                       )}
                     </div>
                   )}
@@ -359,12 +427,12 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                   <div className="flex flex-col gap-2">
                     <div className="flex justify-between items-center px-1">
                       <div className="text-[10px] font-black uppercase tracking-widest text-white/30">
-                        Signal Cycles: <span className={(data.lastApiQueryDate === new Date().toDateString() ? (data.apiQueryCount || 0) : 0) >= 5 ? 'text-pink' : 'text-lime'}>
-                          {data.lastApiQueryDate === new Date().toDateString() ? (data.apiQueryCount || 0) : 0}/5
+                        AI Queries Used: <span className={aiLimitReached ? 'text-pink' : 'text-lime'}>
+                          {dailyQueryCount} / 5
                         </span>
                       </div>
-                      {(data.lastApiQueryDate === new Date().toDateString() && (data.apiQueryCount || 0) >= 5) && (
-                        <div className="text-[9px] font-bold text-pink uppercase tracking-tighter">Neural Link Restricted</div>
+                      {aiLimitReached && (
+                        <div className="text-[9px] font-bold text-pink uppercase tracking-tighter">Daily AI limit reached</div>
                       )}
                     </div>
                     <div className="flex gap-3">
@@ -372,16 +440,17 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                         value={question}
                         onChange={e => setQuestion(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleAsk()}
-                        disabled={loading || (data.lastApiQueryDate === new Date().toDateString() && (data.apiQueryCount || 0) >= 5)}
-                        placeholder={(data.lastApiQueryDate === new Date().toDateString() && (data.apiQueryCount || 0) >= 5) ? "Quantum limit reached..." : "Ask about nutrition, training splits, or recovery..."}
+                        disabled={loading || aiLimitReached}
+                        placeholder={aiLimitReached ? "Daily AI limit reached. Try again tomorrow." : "Ask about nutrition, training splits, or recovery..."}
                         className="flex-1 bg-white/[0.05] border border-border rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:border-lime transition-all disabled:opacity-50"
                       />
                       <button 
                         onClick={handleAsk}
-                        disabled={loading || !question || (data.lastApiQueryDate === new Date().toDateString() && (data.apiQueryCount || 0) >= 5)}
-                        className="p-4 bg-lime text-dark rounded-2xl shadow-xl shadow-lime/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
+                        disabled={loading || !question || aiLimitReached}
+                        className="px-5 py-4 bg-lime text-dark rounded-2xl shadow-xl shadow-lime/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center gap-2 font-black text-xs uppercase tracking-widest"
                       >
-                        {loading ? <RefreshCw className="animate-spin" size={20} /> : <Send size={20} />}
+                        {loading ? <RefreshCw className="animate-spin" size={18} /> : <Send size={18} />}
+                        {loading ? 'Wait' : 'Ask'}
                       </button>
                     </div>
                   </div>
@@ -429,7 +498,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                       <div className="space-y-2 font-bold px-4">
                         <h3 className="text-xl text-pink uppercase tracking-tighter">AI Plan Ready</h3>
                         <p className="text-sm max-w-sm mt-2 opacity-50 leading-relaxed">
-                          `Generate your personalized training protocol based on today’s recovery, fatigue and goal.`
+                          Generate your personalized training protocol based on today’s recovery, fatigue and goal.
                         </p>
                       </div>
                       <button 
@@ -495,7 +564,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                         <Soup size={32} className="text-lime" />
                       </div>
                       <div className="space-y-2 font-bold px-4">
-                        <h3 className="text-xl text-pink uppercase tracking-tighter">Metabolic Link Offline</h3>
+                        <h3 className="text-xl text-pink uppercase tracking-tighter">AI Meal Plan Ready</h3>
                         <p className="text-sm max-w-sm mt-2 opacity-50 leading-relaxed">
                           {mealPlan || `Configure your ${data.profile.diet} nutrition strategy for maximal ${data.profile.goal}.`}
                         </p>
@@ -504,7 +573,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                         onClick={handleGenerateMealPlan}
                         className="px-10 py-5 bg-lime text-dark font-black rounded-2xl uppercase text-[11px] tracking-[0.25em] shadow-2xl shadow-lime/20 hover:scale-105 active:scale-95 transition-all"
                       >
-                        {mealPlan ? 'Stable Protocol Sync' : 'Sync Nutrition Matrix'}
+                        {mealPlan ? 'Regenerate Meal Plan' : 'Generate Meal Plan'}
                       </button>
                     </div>
                   ) : isGeneratingPlan ? (
@@ -563,7 +632,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                         <Pill size={32} className="text-lime" />
                       </div>
                       <div className="space-y-2 font-bold px-4">
-                        <h3 className="text-xl text-pink uppercase tracking-tighter">Bio-Protocol Offline</h3>
+                        <h3 className="text-xl text-pink uppercase tracking-tighter">AI Supplement Plan Ready</h3>
                         <p className="text-sm max-w-sm mt-2 opacity-50 leading-relaxed">
                           {supplementPlan || `Launch your tailored supplement strategy optimized for ${data.profile.goal}.`}
                         </p>
@@ -572,7 +641,7 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                         onClick={handleGenerateSupplementPlan}
                         className="px-10 py-5 bg-lime text-dark font-black rounded-2xl uppercase text-[11px] tracking-[0.25em] shadow-2xl shadow-lime/20 hover:scale-105 active:scale-95 transition-all"
                       >
-                        {supplementPlan ? 'Re-Sync Protocol' : 'Launch Supplement Matrix'}
+                        {supplementPlan ? 'Regenerate Supplement Plan' : 'Generate Supplement Plan'}
                       </button>
                     </div>
                   ) : isGeneratingPlan ? (
