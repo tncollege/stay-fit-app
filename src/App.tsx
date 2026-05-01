@@ -2014,7 +2014,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
         <div>
           <h2 className="text-4xl font-black uppercase tracking-tighter">Performance Tracking</h2>
           <div className="flex items-center gap-4 mt-2">
-            <div className="label-small text-lime tracking-[0.2em]">Matrix: {activeView === 'weight' ? 'Gravitational' : 'Kinetic'}</div>
+            <div className="label-small text-lime tracking-[0.2em]">{activeView === 'weight' ? 'Current Phase' : 'Movement View'}</div>
             <div className="h-1 w-1 rounded-full bg-white/20" />
             <div className="px-2 py-0.5 rounded bg-lime/10 border border-lime/20 text-[8px] font-black text-lime uppercase tracking-widest">{data.profile.goal}</div>
           </div>
@@ -2103,7 +2103,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
           <div className="stat-card p-6 h-[400px]">
             <div className="flex justify-between items-center mb-6">
               <div className="label-small">{activeView === 'weight' ? 'Weight Trend' : 'Activity Trend'}</div>
-              <div className="text-[10px] opacity-40 font-mono">Real-time Visualization</div>
+              <div className="text-[10px] opacity-40 font-mono">Trend Visualization</div>
             </div>
             
             <div className="w-full h-[300px]">
@@ -2165,10 +2165,10 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
 
           {/* Quick Log */}
           <div className="stat-card overflow-hidden">
-            <h3 className="label-small mb-6">Log Record</h3>
+            <h3 className="label-small mb-6">Log Entry</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
               <div className="space-y-2 min-w-0">
-                <div className="label-small text-muted ml-1">Protocol Date</div>
+                <div className="label-small text-muted ml-1">Log Date</div>
                 <input
                   type="date"
                   value={logDate}
@@ -2205,7 +2205,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                 onClick={activeView === 'weight' ? handleLogWeight : handleLogSteps}
                 className="w-full py-5 bg-white/5 border border-border hover:border-lime/40 hover:bg-lime hover:text-dark transition-all rounded-2xl font-black text-xs uppercase tracking-widest"
               >
-                Confirm Entry
+                Save Entry
               </button>
             </div>
           </div>
@@ -2288,15 +2288,15 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
             
             <div className="space-y-6">
               <div className="flex justify-between items-end">
-                <div className="label-small opacity-40">Journey Start</div>
+                <div className="label-small opacity-40">Start Weight</div>
                 <div className="text-xl font-bold">{stats.start} {weightUnit}</div>
               </div>
               <div className="flex justify-between items-end border-t border-white/5 pt-4">
-                <div className="label-small opacity-40">Current State</div>
+                <div className="label-small opacity-40">Current Weight</div>
                 <div className="text-2xl font-black text-lime">{stats.current} {weightUnit}</div>
               </div>
               <div className="flex justify-between items-end border-t border-white/5 pt-4">
-                <div className="label-small opacity-40">Target Protocol</div>
+                <div className="label-small opacity-40">Target Weight</div>
                 <div className="text-xl font-bold">{stats.target} {weightUnit}</div>
               </div>
               
@@ -2318,7 +2318,7 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                 {stats.diff <= 0 ? <TrendingDown className="text-lime" /> : <TrendingUp className="text-pink" />}
                 <div>
                   <div className="text-sm font-bold">{Math.abs(stats.diff)} {weightUnit} {stats.diff <= 0 ? 'Down' : 'Up'}</div>
-                  <div className="text-[10px] opacity-60">Total variance from baseline</div>
+                  <div className="text-[10px] opacity-60">Total change from start</div>
                 </div>
               </div>
             </div>
@@ -2327,13 +2327,13 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
           <div className="stat-card">
             <div className="flex items-center gap-3 mb-6">
               <Footprints className="text-sky" size={20} />
-              <div className="label-small">Sync Hub</div>
+              <div className="label-small">Sync & Integrations</div>
             </div>
             
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-white/[0.02] border border-border">
                 <div className="flex justify-between items-center mb-2">
-                   <div className="text-[10px] font-black uppercase tracking-widest text-sky">Cloud Services</div>
+                   <div className="text-[10px] font-black uppercase tracking-widest text-sky">Cloud Sync</div>
                    {data.lastSyncDate && (
                      <div className="text-[8px] opacity-40 font-mono">Last: {new Date(data.lastSyncDate).toLocaleTimeString()}</div>
                    )}
@@ -2353,19 +2353,19 @@ function Progress({ data, setData, setActiveTab, viewDate, setViewDate }: { data
                     onClick={() => handleCloudSync('Whoop')}
                     className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-border hover:border-sky/40 transition-all text-left"
                   >
-                    <span className="text-[10px] font-bold">Whoop Matrix</span>
+                    <span className="text-[10px] font-bold">Whoop Integration</span>
                     <ChevronRight size={14} />
                   </button>
                 </div>
               </div>
 
               <div className="p-4 rounded-xl bg-white/[0.02] border border-border">
-                <div className="text-[10px] font-black uppercase tracking-widest text-lime mb-2">Manual Integration</div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-lime mb-2">Manual Import</div>
                 <p className="text-[10px] opacity-50 leading-relaxed mb-4">
                   Export Apple Health or Health Connect data to CSV and synchronize manually.
                 </p>
                 <label className="block w-full py-3 bg-white/5 border border-border rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-lime/10 transition-colors cursor-pointer text-center">
-                  Import Protocol CSV
+                  Import Health CSV
                   <input 
                     type="file" 
                     accept=".csv" 
