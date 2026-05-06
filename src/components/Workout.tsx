@@ -1393,6 +1393,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 dayNames={dayNames}
                 todayName={todayName}
                 todayPlan={activeTodayPlan}
+                activeEditPlanDay={activePlanOverride?.originalDay || activeTodayPlan?.dayOfWeek || todayName}
                 originalTodayPlan={todayPlan}
                 pendingMissedPlan={pendingMissedPlan}
                 activePlanOverride={activePlanOverride}
@@ -1400,6 +1401,8 @@ const allWorkouts = useMemo<Workout[]>(() => {
                   if (!pendingMissedPlan) return;
                   setActivePlanOverride(pendingMissedPlan);
                   setWorkoutName(pendingMissedPlan.planName || pendingMissedPlan.originalDay + ' Workout');
+                  // Keep Edit Plan locked to the selected pending workout, not today's calendar plan.
+                  setEditingPlanDay(pendingMissedPlan.originalDay || todayName);
                   const first = pendingMissedPlan.exercises?.[0];
                   if (first) {
                     setSelectedMuscle(first.bodyPart || 'Chest');
@@ -1410,6 +1413,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
                 }}
                 continueTodayPlan={() => {
                   setActivePlanOverride(null);
+                  setEditingPlanDay(todayName);
                   if (todayPlan) {
                     setWorkoutName(todayPlan.planName || todayName + ' Workout');
                     const first = todayPlan.exercises?.[0];
@@ -1875,6 +1879,7 @@ function WeeklyPlanSection(props: any) {
     dayNames,
     todayName,
     todayPlan,
+    activeEditPlanDay,
     originalTodayPlan,
     pendingMissedPlan,
     activePlanOverride,
@@ -1916,6 +1921,13 @@ function WeeklyPlanSection(props: any) {
   const [draggedExerciseIndex, setDraggedExerciseIndex] = useState<number | null>(null);
   const [replaceDrafts, setReplaceDrafts] = useState<Record<number, string>>({});
   const [focusedReplaceIndex, setFocusedReplaceIndex] = useState<number | null>(null);
+
+  // Plan editor follows the workout the user selected from Missed Workout Recovery.
+  // Without this, users can train pending Pull but still see today's Legs in Edit Plan.
+  useEffect(() => {
+    if (!planEditorOpen || !activeEditPlanDay) return;
+    if (editingPlanDay !== activeEditPlanDay) setEditingPlanDay(activeEditPlanDay);
+  }, [planEditorOpen, activeEditPlanDay]);
 
   const allReplacementOptions = useMemo(() => {
     return Array.from(
@@ -2115,7 +2127,13 @@ const { setShowTipsFor } = props;
                 <button onClick={() => startPlanExercise(ex)} className="py-2 rounded-xl bg-lime/15 text-lime border border-lime/20 text-[9px] font-black uppercase hover:bg-lime hover:text-dark transition-all">
                   Log Set
                 </button>
-                <button onClick={() => setPlanEditorOpen(true)} className="py-2 rounded-xl bg-white/[0.03] text-white/40 border border-border text-[9px] font-black uppercase hover:text-white transition-all">
+                <button
+                  onClick={() => {
+                    setEditingPlanDay(activeEditPlanDay || todayName);
+                    setPlanEditorOpen(true);
+                  }}
+                  className="py-2 rounded-xl bg-white/[0.03] text-white/40 border border-border text-[9px] font-black uppercase hover:text-white transition-all"
+                >
                   Edit
                 </button>
                 <button
