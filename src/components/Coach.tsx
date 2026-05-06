@@ -113,7 +113,8 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
   };
 
   const handleAsk = async (forcedQuestion?: string) => {
-    const finalQuestion = (forcedQuestion || question).trim();
+    const safeForcedQuestion = typeof forcedQuestion === 'string' ? forcedQuestion : '';
+    const finalQuestion = (safeForcedQuestion || question).trim();
     if (!finalQuestion || loading) return;
 
     const today = new Date().toDateString();
@@ -445,8 +446,8 @@ export default function Coach({ data, setData }: { data: AppData, setData: any }
                         className="flex-1 bg-white/[0.05] border border-border rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:border-lime transition-all disabled:opacity-50"
                       />
                       <button 
-                        onClick={handleAsk}
-                        disabled={loading || !question || aiLimitReached}
+                        onClick={() => handleAsk()}
+                        disabled={loading || !question.trim() || aiLimitReached}
                         className="px-5 py-4 bg-lime text-dark rounded-2xl shadow-xl shadow-lime/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center gap-2 font-black text-xs uppercase tracking-widest"
                       >
                         {loading ? <RefreshCw className="animate-spin" size={18} /> : <Send size={18} />}
