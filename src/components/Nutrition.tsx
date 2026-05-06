@@ -268,11 +268,37 @@ const COMMON_INGREDIENT_MACROS: Array<{ keys: string[]; ref: MacroRef }> = [
   { keys: ['pasta'], ref: { qty: 100, unit: 'g', calories: 157, protein: 5.8, carbs: 31, fats: 0.9, source: 'Smart cooked per 100g estimate' } },
   { keys: ['pita'], ref: { qty: 1, unit: 'piece', calories: 170, protein: 6, carbs: 34, fats: 2, source: 'Smart per piece estimate' } },
   { keys: ['tortilla', 'wrap'], ref: { qty: 1, unit: 'piece', calories: 180, protein: 5, carbs: 32, fats: 4, source: 'Smart per piece estimate' } },
+  { keys: ['sourdough bread', 'sourdough', 'bread slice', 'bread'], ref: { qty: 1, unit: 'slice', calories: 110, protein: 4, carbs: 22, fats: 1.2, source: 'Smart per slice estimate' } },
 ];
 
+const normalizeNutritionUnit = (unit: string) => {
+  const u = String(unit || '').toLowerCase().trim();
+  if (u === 'pieces' || u === 'pc' || u === 'pcs') return 'piece';
+  if (u === 'slices') return 'slice';
+  if (u === 'grams' || u === 'gram') return 'g';
+  if (u === 'millilitre' || u === 'milliliter' || u === 'millilitres' || u === 'milliliters') return 'ml';
+  if (u === 'tablespoon' || u === 'tablespoons') return 'tbsp';
+  if (u === 'teaspoon' || u === 'teaspoons') return 'tsp';
+  if (u === 'servings') return 'serving';
+  return u;
+};
+
+const findSmartIngredientMacroRef = (name: string): MacroRef | null => {
+  const text = String(name || '').toLowerCase().trim();
+  if (!text) return null;
+
+  // Prefer the most specific rule first. Example: "sourdough bread" should not be
+  // overridden by a stale generic "bread" entry saved in User Food.
+  const matches = COMMON_INGREDIENT_MACROS
+    .filter(item => item.keys.some(key => text.includes(key)))
+    .sort((a, b) => Math.max(...b.keys.map(k => k.length)) - Math.max(...a.keys.map(k => k.length)));
+
+  return matches[0]?.ref || null;
+};
+
 const unitToBaseMultiplier = (qty: number, unit: string, ref: MacroRef) => {
-  const from = String(unit || '').toLowerCase();
-  const base = String(ref.unit || '').toLowerCase();
+  const from = normalizeNutritionUnit(unit);
+  const base = normalizeNutritionUnit(ref.unit);
   const q = Number(qty || 0);
   const refQty = Number(ref.qty || 1);
   if (!q || !refQty) return 0;
@@ -281,13 +307,19 @@ const unitToBaseMultiplier = (qty: number, unit: string, ref: MacroRef) => {
   if (from === 'g' && base === 'kg') return q / 1000 / refQty;
   if (from === 'l' && base === 'ml') return (q * 1000) / refQty;
   if (from === 'ml' && base === 'l') return q / 1000 / refQty;
+  if ((from === 'piece' && base === 'slice') || (from === 'slice' && base === 'piece')) return q / refQty;
   if (base === 'g') {
+    if (from === 'piece') return (q * 100) / refQty;
+    if (from === 'slice') return (q * 35) / refQty;
+    if (from === 'scoop') return (q * 30) / refQty;
     if (from === 'cup') return (q * 150) / refQty;
     if (from === 'tbsp') return (q * 15) / refQty;
     if (from === 'tsp') return (q * 5) / refQty;
     if (from === 'bowl') return (q * 180) / refQty;
     if (from === 'serving') return q;
   }
+  if ((base === 'piece' || base === 'slice') && from === 'g') return q / 40;
+  if ((base === 'piece' || base === 'slice') && from === 'kg') return (q * 1000) / 40;
   if (base === 'ml') {
     if (from === 'cup') return (q * 240) / refQty;
     if (from === 'tbsp') return (q * 15) / refQty;
@@ -737,23 +769,34 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
   const findLocalIngredientMacroRef = (name: string): MacroRef | null => {
     const text = String(name || '').toLowerCase().trim();
     if (!text) return null;
+
+    // Smart common-food references come first because personalFood/database can
+    // contain previously saved wrong totals, which was causing 2 pieces of
+    // sourdough to show huge macros like 500 kcal / 100g carbs.
+    const smartMatch = findSmartIngredientMacroRef(text);
+    if (smartMatch) return smartMatch;
+
     const dbMatch = combinedFoodList.find(food => {
-      const foodName = String(food.name || '').toLowerCase();
+      const foodName = String(food.name || '').toLowerCase().trim();
+      if (!foodName) return false;
       return foodName === text || foodName.includes(text) || text.includes(foodName);
     });
+
     if (dbMatch) {
+      const dbQty = Number(dbMatch.qty || 1);
+      const dbUnit = normalizeNutritionUnit(dbMatch.unit || dbMatch.portion || 'serving');
       return {
         calories: Number(dbMatch.calories || 0),
         protein: Number(dbMatch.protein || 0),
         carbs: Number(dbMatch.carbs || 0),
         fats: Number(dbMatch.fats ?? dbMatch.fat ?? 0),
-        qty: Number(dbMatch.qty || 1),
-        unit: dbMatch.unit || dbMatch.portion || 'serving',
+        qty: dbQty > 0 ? dbQty : 1,
+        unit: dbUnit || 'serving',
         source: 'Food database match',
       };
     }
-    const smartMatch = COMMON_INGREDIENT_MACROS.find(item => item.keys.some(key => text.includes(key)));
-    return smartMatch ? smartMatch.ref : null;
+
+    return null;
   };
 
   const applyManualMacroRef = (ref: MacroRef | null, nextQty = manualIngredient.qty, nextUnit = manualIngredient.unit) => {
@@ -763,7 +806,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
     setManualMacroRef(ref);
     setManualIngredient(prev => ({
       ...prev,
-      unit: prev.unit || ref.unit || 'g',
+      unit: prev.unit || normalizeNutritionUnit(ref.unit) || 'g',
       calories: String(scaled.calories),
       protein: String(scaled.protein),
       carbs: String(scaled.carbs),
@@ -772,37 +815,52 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
   };
 
   const lookupManualIngredientNutrition = async () => {
-    if (!manualIngredient.name.trim()) return;
+    const cleanName = manualIngredient.name.trim();
+    const qty = Number(manualIngredient.qty);
+    if (!cleanName) return;
+    if (!qty || qty <= 0) {
+      showNutritionMessage('Enter quantity before nutrition lookup');
+      return;
+    }
     setManualLookupLoading(true);
     try {
-      const localRef = findLocalIngredientMacroRef(manualIngredient.name);
+      const localRef = findLocalIngredientMacroRef(cleanName);
       if (localRef) {
         applyManualMacroRef(localRef);
         showNutritionMessage('Nutrition auto-filled from database');
         return;
       }
-      const aiFood = await searchFoodNutrition(`${manualIngredient.name} ${manualIngredient.qty || 1} ${manualIngredient.unit || 'g'}`);
+      const aiFood = await searchFoodNutrition(`${cleanName} ${qty} ${manualIngredient.unit || 'g'}`);
       if (!aiFood) {
         showNutritionMessage('No nutrition match found. Enter macros manually.');
         return;
       }
       const ref: MacroRef = {
+        // Treat the AI response as the nutrition for the requested amount,
+        // then keep that as a reference so future quantity/unit edits scale
+        // from a known base instead of carrying stale totals.
         calories: Number(aiFood.calories || 0),
         protein: Number(aiFood.protein || 0),
         carbs: Number(aiFood.carbs || 0),
         fats: Number(aiFood.fats ?? aiFood.fat ?? 0),
-        qty: Number(manualIngredient.qty || 1),
-        unit: manualIngredient.unit || aiFood.unit || aiFood.portion || 'serving',
+        qty,
+        unit: normalizeNutritionUnit(manualIngredient.unit || aiFood.unit || aiFood.portion || 'serving'),
         source: 'Gym-E AI lookup',
+      };
+      const scaled = scaleMacrosFromRef(qty, manualIngredient.unit || ref.unit, ref) || {
+        calories: ref.calories,
+        protein: ref.protein,
+        carbs: ref.carbs,
+        fats: ref.fats,
       };
       setManualMacroRef(ref);
       setManualIngredient(prev => ({
         ...prev,
         name: aiFood.name || prev.name,
-        calories: String(Math.round(ref.calories)),
-        protein: String(round(ref.protein)),
-        carbs: String(round(ref.carbs)),
-        fats: String(round(ref.fats)),
+        calories: String(Math.round(scaled.calories)),
+        protein: String(round(scaled.protein)),
+        carbs: String(round(scaled.carbs)),
+        fats: String(round(scaled.fats)),
       }));
       showNutritionMessage('Gym-E AI nutrition filled');
     } catch (err) {
@@ -850,6 +908,13 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
       if (item.id !== id) return item;
       const numericKeys = ['qty', 'calories', 'protein', 'carbs', 'fats'];
       const updated = { ...item, [key]: numericKeys.includes(key) ? Number(value) : value };
+      if (key === 'name') {
+        const nextRef = findLocalIngredientMacroRef(String(value || ''));
+        if (nextRef) {
+          const scaled = scaleMacrosFromRef(Number(updated.qty || nextRef.qty || 1), updated.unit || nextRef.unit, nextRef);
+          if (scaled) return { ...updated, macroRef: nextRef, ...scaled };
+        }
+      }
       if ((key === 'qty' || key === 'unit') && updated.macroRef) {
         const scaled = scaleMacrosFromRef(Number(updated.qty || 0), updated.unit, updated.macroRef);
         if (scaled) return { ...updated, ...scaled };
@@ -865,7 +930,11 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
   const estimateMealComponentsFromPrompt = async (prompt: string) => {
     const text = prompt.toLowerCase();
     const components: any[] = [];
-    const add = (item: any) => components.push(normalizeMealBuilderComponent(item));
+    const add = (item: any) => {
+      const ref = item.macroRef || findLocalIngredientMacroRef(item.name);
+      const scaled = ref ? scaleMacrosFromRef(Number(item.qty || ref.qty || 1), item.unit || ref.unit, ref) : null;
+      components.push(normalizeMealBuilderComponent({ ...item, ...(scaled || {}), macroRef: ref || item.macroRef }));
+    };
 
     const matchedFoods = combinedFoodList
       .filter(food => {
@@ -882,6 +951,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
       protein: food.protein,
       carbs: food.carbs,
       fats: food.fats,
+      macroRef: findLocalIngredientMacroRef(food.name),
     }));
 
     const smartRules = [
@@ -1642,7 +1712,14 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
                     <input
                       value={manualIngredient.name}
                       onChange={e => {
-                        setManualIngredient({ ...manualIngredient, name: e.target.value });
+                        setManualIngredient({
+                          ...manualIngredient,
+                          name: e.target.value,
+                          calories: '',
+                          protein: '',
+                          carbs: '',
+                          fats: '',
+                        });
                         setManualMacroRef(null);
                       }}
                       placeholder="Ingredient name e.g. Peri Peri Chicken, Dal, Rice, Olive Oil"
@@ -1669,7 +1746,7 @@ export default function Nutrition({ data, setData, viewDate, setViewDate, perfor
 
                     <button
                       onClick={lookupManualIngredientNutrition}
-                      disabled={manualLookupLoading || !manualIngredient.name.trim()}
+                      disabled={manualLookupLoading || !manualIngredient.name.trim() || !Number(manualIngredient.qty)}
                       className="w-full rounded-2xl border border-lime/20 bg-lime/10 py-4 text-[10px] font-black uppercase tracking-widest text-lime disabled:opacity-30 active:scale-95 transition-all"
                     >
                       {manualLookupLoading ? 'Looking Up Nutrition...' : 'AI Nutrition Lookup'}
