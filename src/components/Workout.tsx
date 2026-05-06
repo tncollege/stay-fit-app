@@ -613,6 +613,35 @@ const allWorkouts = useMemo<Workout[]>(() => {
     if (activePlanOverride && !pendingMissedPlan) setActivePlanOverride(null);
   }, [pendingMissedPlan, activePlanOverride]);
 
+  // Keep the live rendered workout in sync with edits made in Edit Plan.
+  // The screen renders activePlanOverride when the user chose a pending missed plan.
+  // Earlier, replacements/reorders updated workoutPlans, but activePlanOverride still held
+  // the old exercise array, so the visible plan looked unchanged after saving.
+  useEffect(() => {
+    if (!activePlanOverride?.originalDay) return;
+
+    const latestPlan = workoutPlans[activePlanOverride.originalDay];
+    if (!latestPlan?.exercises?.length) return;
+
+    const latestSignature = JSON.stringify({
+      planName: latestPlan.planName || '',
+      exercises: latestPlan.exercises || [],
+    });
+    const activeSignature = JSON.stringify({
+      planName: activePlanOverride.planName || '',
+      exercises: activePlanOverride.exercises || [],
+    });
+
+    if (latestSignature !== activeSignature) {
+      setActivePlanOverride({
+        ...latestPlan,
+        originalDay: activePlanOverride.originalDay,
+        originalDate: activePlanOverride.originalDate,
+        mode: getPlanTrainingMode(latestPlan),
+      });
+    }
+  }, [workoutPlans, activePlanOverride]);
+
   const totalWorkoutVolume = getWorkoutTotalVolume(currentSets);
   const trainedMuscles = Array.from(new Set(currentSets.map((s) => s.muscle).filter(Boolean)));
 
@@ -941,9 +970,25 @@ const allWorkouts = useMemo<Workout[]>(() => {
     try {
       await saveWorkoutPlan(plan);
       setWorkoutPlans((prev) => ({ ...prev, [editingPlanDay]: plan }));
+
+      if (activePlanOverride?.originalDay === editingPlanDay) {
+        setActivePlanOverride({
+          ...plan,
+          originalDay: activePlanOverride.originalDay,
+          originalDate: activePlanOverride.originalDate,
+          mode: getPlanTrainingMode(plan),
+        });
+        setWorkoutName(plan.planName);
+        const firstExercise = plan.exercises?.[0];
+        if (firstExercise) {
+          setSelectedMuscle(firstExercise.bodyPart || 'Chest');
+          setExercise(firstExercise.name);
+        }
+      }
+
       showWorkoutMessage('Weekly plan saved successfully');
       setPlanEditorOpen(false);
-      setEditingPlanDay(todayName);
+      setEditingPlanDay(activePlanOverride?.originalDay || todayName);
       setPlanNameInput('');
       setPlanExerciseInput('');
       setPlanBodyPartInput('Chest');
