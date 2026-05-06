@@ -466,6 +466,7 @@ export default function WorkoutView({
   const [planEditorOpen, setPlanEditorOpen] = useState(false);
   const [completedPlanExercises, setCompletedPlanExercises] = useState<Record<string, boolean>>({});
   const [trainingMode, setTrainingMode] = useState<TrainingMode>('Auto');
+  const [activePlanOverride, setActivePlanOverride] = useState<any | null>(null);
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
   const [sessionElapsed, setSessionElapsed] = useState(0);
@@ -554,6 +555,64 @@ const allWorkouts = useMemo<Workout[]>(() => {
   };
   const todayPlan = workoutPlans[todayName];
 
+  const pendingMissedPlan = useMemo(() => {
+    const baseDate = new Date(viewDate + 'T00:00:00');
+    const pending: any[] = [];
+
+    for (let offset = 6; offset >= 1; offset--) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() - offset);
+      const key = getLocalDateKey(d);
+      const dayName = dayNames[d.getDay()];
+      const plan = workoutPlans[dayName];
+
+      if (plan?.exercises?.length) {
+        pending.push({
+          ...plan,
+          originalDay: dayName,
+          originalDate: key,
+          mode: getPlanTrainingMode(plan),
+        });
+      }
+
+      const dayWorkouts = data.workouts?.[key] || [];
+      dayWorkouts.forEach((workout: any) => {
+        const workoutMode = getPlanTrainingMode({
+          planName: getWorkoutDisplayName(workout),
+          exercises: (workout.sets || []).map((set: any) => ({
+            name: set.exercise,
+            bodyPart: set.muscle,
+          })),
+        });
+
+        if (!workoutMode) return;
+
+        const matchingIndex = pending.findIndex((item) => item.mode === workoutMode);
+        if (matchingIndex >= 0) {
+          pending.splice(matchingIndex, 1);
+        }
+      });
+    }
+
+    return pending[0] || null;
+  }, [viewDate, workoutPlans, data.workouts, dayNames]);
+
+  const activeTodayPlan = activePlanOverride || todayPlan;
+
+  useEffect(() => {
+    setActivePlanOverride(null);
+  }, [viewDate, todayName]);
+
+  useEffect(() => {
+    if (activePlanOverride && pendingMissedPlan) {
+      const samePlan =
+        String(activePlanOverride.originalDate || '') === String(pendingMissedPlan.originalDate || '') &&
+        String(activePlanOverride.planName || '') === String(pendingMissedPlan.planName || '');
+      if (!samePlan) setActivePlanOverride(null);
+    }
+    if (activePlanOverride && !pendingMissedPlan) setActivePlanOverride(null);
+  }, [pendingMissedPlan, activePlanOverride]);
+
   const totalWorkoutVolume = getWorkoutTotalVolume(currentSets);
   const trainedMuscles = Array.from(new Set(currentSets.map((s) => s.muscle).filter(Boolean)));
 
@@ -623,19 +682,19 @@ const allWorkouts = useMemo<Workout[]>(() => {
   ]);
 
   const recommendedMode = useMemo(
-    () => getRecommendedTrainingMode(workoutReadiness, fatigueStatus, todayName, todayPlan),
-    [workoutReadiness, fatigueStatus, todayName, todayPlan]
+    () => getRecommendedTrainingMode(workoutReadiness, fatigueStatus, todayName, activeTodayPlan),
+    [workoutReadiness, fatigueStatus, todayName, activeTodayPlan]
   );
 
   const activeTrainingMode = trainingMode === 'Auto' ? recommendedMode : trainingMode;
   const workoutEnginePlanName = useMemo(() => {
-    const planName = String(todayPlan?.planName || '').trim();
+    const planName = String(activeTodayPlan?.planName || '').trim();
     return planName || activeTrainingMode;
-  }, [todayPlan?.planName, activeTrainingMode]);
+  }, [activeTodayPlan?.planName, activeTrainingMode]);
 
   const workoutPrescription = useMemo(() => {
     const base = getModePrescription(activeTrainingMode, workoutReadiness, fatigueStatus);
-    if (!todayPlan?.planName) return base;
+    if (!activeTodayPlan?.planName) return base;
     return {
       ...base,
       title:
@@ -643,7 +702,7 @@ const allWorkouts = useMemo<Workout[]>(() => {
           ? `${workoutEnginePlanName} Recovery Session`
           : `${workoutEnginePlanName} Hypertrophy Session`,
     };
-  }, [activeTrainingMode, workoutReadiness, fatigueStatus, todayPlan?.planName, workoutEnginePlanName]);
+  }, [activeTrainingMode, workoutReadiness, fatigueStatus, activeTodayPlan?.planName, workoutEnginePlanName]);
 
   const workoutRecommendationLabel = trainingMode === 'Auto' ? workoutEnginePlanName : activeTrainingMode;
   const hasLoggedTodayWorkout = workoutsArr.length > 0;
@@ -915,18 +974,18 @@ const allWorkouts = useMemo<Workout[]>(() => {
   };
 
   const startTodayPlan = () => {
-    if (!todayPlan) return;
+    if (!activeTodayPlan) return;
 
-    setWorkoutName(todayPlan.planName || todayName + ' Workout');
+    setWorkoutName(activeTodayPlan.planName || todayName + ' Workout');
 
-    const first = todayPlan.exercises?.[0];
+    const first = activeTodayPlan.exercises?.[0];
     if (first) {
       setSelectedMuscle(first.bodyPart || 'Chest');
       setExercise(first.name);
     }
 
     setActiveTab('strength');
-    showWorkoutMessage('Today’s plan loaded');
+    showWorkoutMessage(`${activeTodayPlan?.planName || 'Workout'} loaded`);
   };
 
   const startPlanExercise = (ex: any) => {
@@ -1333,7 +1392,35 @@ const allWorkouts = useMemo<Workout[]>(() => {
               <WeeklyPlanSection
                 dayNames={dayNames}
                 todayName={todayName}
-                todayPlan={todayPlan}
+                todayPlan={activeTodayPlan}
+                originalTodayPlan={todayPlan}
+                pendingMissedPlan={pendingMissedPlan}
+                activePlanOverride={activePlanOverride}
+                choosePendingPlan={() => {
+                  if (!pendingMissedPlan) return;
+                  setActivePlanOverride(pendingMissedPlan);
+                  setWorkoutName(pendingMissedPlan.planName || pendingMissedPlan.originalDay + ' Workout');
+                  const first = pendingMissedPlan.exercises?.[0];
+                  if (first) {
+                    setSelectedMuscle(first.bodyPart || 'Chest');
+                    setExercise(first.name);
+                  }
+                  setActiveTab('strength');
+                  showWorkoutMessage(`${pendingMissedPlan.planName || 'Missed workout'} loaded`);
+                }}
+                continueTodayPlan={() => {
+                  setActivePlanOverride(null);
+                  if (todayPlan) {
+                    setWorkoutName(todayPlan.planName || todayName + ' Workout');
+                    const first = todayPlan.exercises?.[0];
+                    if (first) {
+                      setSelectedMuscle(first.bodyPart || 'Chest');
+                      setExercise(first.name);
+                    }
+                  }
+                  setActiveTab('strength');
+                  showWorkoutMessage('Today’s plan loaded');
+                }}
                 planEditorOpen={planEditorOpen}
                 setPlanEditorOpen={setPlanEditorOpen}
                 editingPlanDay={editingPlanDay}
@@ -1788,6 +1875,11 @@ function WeeklyPlanSection(props: any) {
     dayNames,
     todayName,
     todayPlan,
+    originalTodayPlan,
+    pendingMissedPlan,
+    activePlanOverride,
+    choosePendingPlan,
+    continueTodayPlan,
     planEditorOpen,
     setPlanEditorOpen,
     editingPlanDay,
@@ -1823,6 +1915,7 @@ function WeeklyPlanSection(props: any) {
 
   const [draggedExerciseIndex, setDraggedExerciseIndex] = useState<number | null>(null);
   const [replaceDrafts, setReplaceDrafts] = useState<Record<number, string>>({});
+  const [focusedReplaceIndex, setFocusedReplaceIndex] = useState<number | null>(null);
 
   const allReplacementOptions = useMemo(() => {
     return Array.from(
@@ -1839,6 +1932,18 @@ function WeeklyPlanSection(props: any) {
     const finalName = exactMatch || cleanValue;
     replaceExerciseInPlan(index, finalName);
     setReplaceDrafts((prev) => ({ ...prev, [index]: finalName }));
+    setFocusedReplaceIndex(null);
+  };
+
+  const getFilteredReplacementOptions = (index: number, currentName: string) => {
+    const query = String(replaceDrafts[index] ?? currentName ?? '').trim().toLowerCase();
+    return allReplacementOptions
+      .filter((option: string) => {
+        const normalizedOption = option.toLowerCase();
+        if (!query) return true;
+        return normalizedOption.includes(query) || query.split(/\s+/).every((part) => normalizedOption.includes(part));
+      })
+      .slice(0, 8);
   };
 
   const plannedExercises = todayPlan?.exercises || [];
@@ -1927,6 +2032,49 @@ const { setShowTipsFor } = props;
             : 'Select a window or enter an exact time to unlock pre/post-workout meal guidance.'}
         </div>
       </div>
+
+      {pendingMissedPlan && (
+        <div className="rounded-2xl border border-orange-400/30 bg-orange-400/10 p-4 space-y-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-orange-300">Pending Missed Workout</div>
+              <div className="text-lg font-black mt-1">
+                {pendingMissedPlan.planName || pendingMissedPlan.originalDay + ' Workout'}
+              </div>
+              <div className="text-[11px] text-white/50 font-bold mt-1">
+                This was planned for {pendingMissedPlan.originalDay}. Choose it today, continue {originalTodayPlan?.planName || 'today’s plan'}, or edit the weekly plan.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={choosePendingPlan}
+                className={`px-4 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${
+                  activePlanOverride
+                    ? 'bg-orange-400 text-dark border-orange-400 shadow-lg shadow-orange-400/20'
+                    : 'bg-orange-400/15 text-orange-200 border-orange-400/30 hover:bg-orange-400 hover:text-dark'
+                }`}
+              >
+                Do Pending {pendingMissedPlan.planName || 'Workout'}
+              </button>
+              <button
+                onClick={continueTodayPlan}
+                className="px-4 py-3 rounded-xl bg-white/[0.04] border border-border text-white/60 hover:text-white text-[9px] font-black uppercase tracking-widest"
+              >
+                Continue {originalTodayPlan?.planName || 'Today'}
+              </button>
+              <button
+                onClick={() => {
+                  setPlanEditorOpen(true);
+                  setEditingPlanDay(pendingMissedPlan.originalDay || todayName);
+                }}
+                className="px-4 py-3 rounded-xl bg-sky/10 border border-sky/20 text-sky text-[9px] font-black uppercase tracking-widest"
+              >
+                Edit Plan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {yesterdayNote && (
         <div className="rounded-2xl border border-sky/20 bg-sky/5 p-4 text-[11px] text-sky font-bold leading-relaxed">
@@ -2099,26 +2247,57 @@ const { setShowTipsFor } = props;
                         </div>
                       </div>
 
-                      <input
-                        list={`exercise-replace-options-${idx}`}
-                        value={replaceDrafts[idx] ?? ex.name}
-                        onChange={(event) => setReplaceDrafts((prev) => ({ ...prev, [idx]: event.target.value }))}
-                        onBlur={(event) => commitExerciseReplacement(idx, event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault();
-                            commitExerciseReplacement(idx, (event.target as HTMLInputElement).value);
-                            (event.target as HTMLInputElement).blur();
-                          }
-                        }}
-                        className="w-full rounded-xl border border-border bg-black/30 px-4 py-3 text-sm font-black text-white outline-none focus:border-lime focus:bg-lime/5 transition-all"
-                        placeholder="Replace exercise..."
-                      />
-                      <datalist id={`exercise-replace-options-${idx}`}>
-                        {allReplacementOptions.map((option: string) => (
-                          <option key={option} value={option} />
-                        ))}
-                      </datalist>
+                      <div className="relative">
+                        <input
+                          value={replaceDrafts[idx] ?? ex.name}
+                          onFocus={() => setFocusedReplaceIndex(idx)}
+                          onChange={(event) => {
+                            setFocusedReplaceIndex(idx);
+                            setReplaceDrafts((prev) => ({ ...prev, [idx]: event.target.value }));
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              commitExerciseReplacement(idx, (event.target as HTMLInputElement).value);
+                              (event.target as HTMLInputElement).blur();
+                            }
+                            if (event.key === 'Escape') {
+                              setFocusedReplaceIndex(null);
+                              setReplaceDrafts((prev) => ({ ...prev, [idx]: ex.name }));
+                            }
+                          }}
+                          className="w-full rounded-xl border border-border bg-black/30 px-4 py-3 text-sm font-black text-white outline-none focus:border-lime focus:bg-lime/5 transition-all"
+                          placeholder="Type to replace exercise..."
+                        />
+
+                        {focusedReplaceIndex === idx && (
+                          <div
+                            onMouseDown={(event) => event.preventDefault()}
+                            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-[80] max-h-64 overflow-y-auto rounded-2xl border border-lime/20 bg-panel/95 p-2 shadow-2xl shadow-black/50 backdrop-blur-xl custom-scrollbar"
+                          >
+                            {getFilteredReplacementOptions(idx, ex.name).length > 0 ? (
+                              getFilteredReplacementOptions(idx, ex.name).map((option: string) => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => commitExerciseReplacement(idx, option)}
+                                  className="w-full rounded-xl px-3 py-3 text-left text-xs font-black text-white/70 hover:bg-lime/10 hover:text-lime transition-all"
+                                >
+                                  {option}
+                                </button>
+                              ))
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => commitExerciseReplacement(idx, replaceDrafts[idx] || ex.name)}
+                                className="w-full rounded-xl px-3 py-3 text-left text-xs font-black text-sky hover:bg-sky/10 transition-all"
+                              >
+                                Use custom: {toExerciseTitle(replaceDrafts[idx] || ex.name)}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <button
